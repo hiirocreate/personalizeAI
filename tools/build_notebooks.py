@@ -198,6 +198,8 @@ CKPT = {{
     "realvis": ("{HF}/SG161222/RealVisXL_V5.0/resolve/main/RealVisXL_V5.0_fp16.safetensors", "RealVisXL_V5.0_fp16.safetensors"),
 }}[BASE_MODEL]
 dl(CKPT[0], "/content/models")
+# fp16 で NaN にならない SDXL VAE (fp32 VAE だと T4 の VRAM が不足するため)
+dl("https://huggingface.co/madebyollin/sdxl-vae-fp16-fix/resolve/main/sdxl_vae.safetensors", "/content/models")
 MODEL_PATH = f"/content/models/{{CKPT[1]}}"
 print("✅ 準備完了")
 '''),
@@ -264,14 +266,14 @@ enable_bucket = true
 image_dir = "{IMG}"
 num_repeats = {REPEATS}
 """)
-cmd = f"""cd {S} && accelerate launch --num_processes 1 --num_machines 1 --mixed_precision fp16 --dynamo_backend no \\
- sdxl_train_network.py --pretrained_model_name_or_path="{MODEL_PATH}" --dataset_config=/content/dataset.toml \\
+cmd = f"""cd {S} && PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True accelerate launch --num_processes 1 --num_machines 1 --mixed_precision fp16 --dynamo_backend no \\
+ sdxl_train_network.py --pretrained_model_name_or_path="{MODEL_PATH}" --vae=/content/models/sdxl_vae.safetensors --dataset_config=/content/dataset.toml \\
  --output_dir="{OUT}" --output_name="{DATASET}" --save_model_as=safetensors \\
  --network_module=networks.lora --network_dim={NETWORK_DIM} --network_alpha={NETWORK_DIM // 2} --network_train_unet_only \\
  --learning_rate={LEARNING_RATE} --optimizer_type=AdamW8bit --lr_scheduler=cosine --lr_warmup_steps=50 \\
  --max_train_epochs={EPOCHS} --save_every_n_epochs=2 --mixed_precision=fp16 --save_precision=fp16 \\
  --cache_latents --cache_latents_to_disk --cache_text_encoder_outputs --gradient_checkpointing --sdpa \\
- --no_half_vae --lowram --max_data_loader_n_workers=1 --seed=42"""
+ --lowram --max_data_loader_n_workers=1 --seed=42"""
 # 失敗を見逃さないよう出力をログに保存し、終了コードと成果物を確認
 LOG = f"{OUT}/{DATASET}_train.log"
 proc = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
@@ -287,7 +289,8 @@ with open(LOG, "w") as lf:
 code_ = proc.wait()
 made = sorted(f for f in os.listdir(OUT) if f.startswith(DATASET) and f.endswith(".safetensors"))
 if code_ != 0 or not made:
-    hint = "メモリ不足で強制終了 (RESOLUTION を 768 に下げる)" if code_ in (-9, 137) else "上のログ末尾を確認"
+    oom = code_ in (-9, 137) or any("OutOfMemoryError" in l for l in tail)
+    hint = "メモリ不足 (① で RESOLUTION を 768 に下げて ②③④ を再実行)" if oom else "上のログ末尾を確認"
     raise RuntimeError(f"学習失敗 (終了コード {code_}): {hint}\\nログ全文: {LOG}\\n" + "".join(tail[-30:]))
 print("✅ 完成:", [f"{OUT}/{f}" for f in made])
 '''),
