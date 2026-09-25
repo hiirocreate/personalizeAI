@@ -192,7 +192,7 @@ HF_TOKEN = ""  #@param {type:"string"}
 S = "/content/sd-scripts"
 if not os.path.exists(S):
     sh(f"git clone -q --depth 1 https://github.com/kohya-ss/sd-scripts {{S}}")
-    sh(f"cd {{S}} && pip install -q -r requirements.txt bitsandbytes onnxruntime-gpu")
+    sh(f"cd {{S}} && pip install -q -r requirements.txt bitsandbytes onnx onnxruntime-gpu")
 CKPT = {{
     "animagine": ("{HF}/cagliostrolab/animagine-xl-4.0/resolve/main/animagine-xl-4.0-opt.safetensors", "animagine-xl-4.0-opt.safetensors"),
     "realvis": ("{HF}/SG161222/RealVisXL_V5.0/resolve/main/RealVisXL_V5.0_fp16.safetensors", "RealVisXL_V5.0_fp16.safetensors"),
