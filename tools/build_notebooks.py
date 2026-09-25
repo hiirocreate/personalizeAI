@@ -72,7 +72,7 @@ FLUX = True  #@param {type:"boolean"}
 FLUX_QUANT = "Q4_K_S"  #@param ["Q3_K_S", "Q4_K_S", "Q5_K_S", "Q6_K", "Q8_0"]
 SDXL_ILLUST = True  #@param {type:"boolean"}
 SDXL_PHOTO = False  #@param {type:"boolean"}
-WAN_VIDEO = False  #@param {type:"boolean"}
+WAN_VIDEO = True  #@param {type:"boolean"}
 WAN_QUANT = "Q4_K_M"  #@param ["Q3_K_M", "Q4_K_M", "Q5_K_M", "Q6_K", "Q8_0"]
 #@markdown 追加モデル (Civitai 等の直リンク) `URL|models/サブフォルダ` をカンマ区切り
 EXTRA = ""  #@param {type:"string"}
@@ -251,6 +251,7 @@ print("例:", open(txt).read()[:300])
 '''),
     code('''
 #@title ④ 学習 (T4 省メモリ設定: UNetのみ / fp16 / 8bit AdamW / gradient checkpointing)
+import time
 OUT = f"{BASE}/loras"
 open("/content/dataset.toml", "w").write(f"""
 [general]
@@ -270,9 +271,25 @@ cmd = f"""cd {S} && accelerate launch --num_processes 1 --num_machines 1 --mixed
  --learning_rate={LEARNING_RATE} --optimizer_type=AdamW8bit --lr_scheduler=cosine --lr_warmup_steps=50 \\
  --max_train_epochs={EPOCHS} --save_every_n_epochs=2 --mixed_precision=fp16 --save_precision=fp16 \\
  --cache_latents --cache_latents_to_disk --cache_text_encoder_outputs --gradient_checkpointing --sdpa \\
- --no_half_vae --max_data_loader_n_workers=1 --seed=42"""
-!{cmd}
-print("✅ 保存先:", OUT); print(os.listdir(OUT))
+ --no_half_vae --lowram --max_data_loader_n_workers=1 --seed=42"""
+# 失敗を見逃さないよう出力をログに保存し、終了コードと成果物を確認
+LOG = f"{OUT}/{DATASET}_train.log"
+proc = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+tail, last = [], 0
+with open(LOG, "w") as lf:
+    for line in proc.stdout:
+        lf.write(line); lf.flush()
+        tail = (tail + [line])[-60:]
+        if "steps:" in line:  # 進捗バーは 30 秒ごとに表示
+            if time.time() - last < 30: continue
+            last = time.time()
+        print(line, end="")
+code_ = proc.wait()
+made = sorted(f for f in os.listdir(OUT) if f.startswith(DATASET) and f.endswith(".safetensors"))
+if code_ != 0 or not made:
+    hint = "メモリ不足で強制終了 (RESOLUTION を 768 に下げる)" if code_ in (-9, 137) else "上のログ末尾を確認"
+    raise RuntimeError(f"学習失敗 (終了コード {code_}): {hint}\\nログ全文: {LOG}\\n" + "".join(tail[-30:]))
+print("✅ 完成:", [f"{OUT}/{f}" for f in made])
 '''),
 ]
 
