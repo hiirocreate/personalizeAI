@@ -96,7 +96,7 @@ if FLUX:
     dl(f"{HF}/city96/FLUX.1-schnell-gguf/resolve/main/flux1-schnell-{{FLUX_QUANT}}.gguf", f"{{M}}/unet")
     dl(f"{HF}/city96/t5-v1_1-xxl-encoder-gguf/resolve/main/t5-v1_1-xxl-encoder-Q5_K_M.gguf", f"{{M}}/clip")
     dl(f"{HF}/comfyanonymous/flux_text_encoders/resolve/main/clip_l.safetensors", f"{{M}}/clip")
-    dl(f"{HF}/black-forest-labs/FLUX.1-schnell/resolve/main/ae.safetensors", f"{{M}}/vae")
+    dl(f"{HF}/Comfy-Org/Lumina_Image_2.0_Repackaged/resolve/main/split_files/vae/ae.safetensors", f"{{M}}/vae")
 if SDXL_ILLUST:
     dl(f"{HF}/cagliostrolab/animagine-xl-4.0/resolve/main/animagine-xl-4.0-opt.safetensors", f"{{M}}/checkpoints")
 if SDXL_PHOTO:
