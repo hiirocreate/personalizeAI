@@ -1,0 +1,148 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>personalizeAI Studio</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎨</text></svg>">
+<script type="module" src="https://cdn.jsdelivr.net/npm/@google/model-viewer@4/dist/model-viewer.min.js"></script>
+<style>
+:root{--bg:#f6f7f9;--panel:#fff;--fg:#1b1d22;--muted:#667;--line:#dde1e7;--accent:#5b5bd6;--accent-fg:#fff;--err:#c62828}
+@media (prefers-color-scheme:dark){:root:not([data-theme=light]){--bg:#111317;--panel:#1b1e24;--fg:#e8eaf0;--muted:#99a;--line:#2d313a;--accent:#8b8bff;--accent-fg:#111;--err:#ff7a7a}}
+:root[data-theme=dark]{--bg:#111317;--panel:#1b1e24;--fg:#e8eaf0;--muted:#99a;--line:#2d313a;--accent:#8b8bff;--accent-fg:#111;--err:#ff7a7a}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.6 system-ui,-apple-system,"Hiragino Sans","Noto Sans JP",sans-serif}
+header{display:flex;align-items:center;gap:12px;padding:12px 16px;border-bottom:1px solid var(--line);background:var(--panel);position:sticky;top:0;z-index:2;flex-wrap:wrap}
+header h1{font-size:17px;margin:0}
+nav{display:flex;gap:4px;flex-wrap:wrap}
+nav button{background:none;border:1px solid transparent;color:var(--muted);padding:6px 10px;border-radius:8px;cursor:pointer;font:inherit}
+nav button.on{border-color:var(--line);color:var(--fg);background:var(--bg)}
+main{max-width:1100px;margin:0 auto;padding:16px}
+section{display:none}section.on{display:block}
+.grid{display:grid;grid-template-columns:minmax(0,360px) minmax(0,1fr);gap:16px}
+@media (max-width:760px){.grid{grid-template-columns:minmax(0,1fr)}}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px}
+label{display:block;font-size:13px;color:var(--muted);margin:10px 0 4px}
+input,select,textarea{width:100%;padding:8px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--fg);font:inherit}
+textarea{min-height:90px;resize:vertical}
+.row{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.btn{margin-top:14px;width:100%;padding:10px;border:0;border-radius:8px;background:var(--accent);color:var(--accent-fg);font:inherit;font-weight:600;cursor:pointer}
+.btn:disabled{opacity:.5;cursor:wait}
+.btn.sub{background:var(--bg);color:var(--fg);border:1px solid var(--line)}
+.out{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:10px}
+.out img,.out video{width:100%;border-radius:10px;border:1px solid var(--line);display:block}
+.out a{font-size:12px;color:var(--muted)}
+.status{font-size:13px;color:var(--muted);margin-top:8px;min-height:1.4em;word-break:break-all}
+.status.err{color:var(--err)}
+.hint{font-size:13px;color:var(--muted)}
+.hint a{color:var(--accent)}
+model-viewer{width:100%;height:60vh;background:var(--bg);border-radius:12px}
+.hide{display:none}
+</style>
+</head>
+<body>
+<header>
+  <h1>🎨 personalizeAI Studio</h1>
+  <nav id="tabs">
+    <button data-t="quick" class="on">クイック生成</button>
+    <button data-t="gpu">Colab GPU</button>
+    <button data-t="3d">3D</button>
+    <button data-t="guide">使い方</button>
+  </nav>
+</header>
+<main>
+
+<section id="quick" class="on">
+  <div class="grid">
+    <div class="card">
+      <p class="hint">GPU 不要・登録不要 (Pollinations.ai)。お試しやラフ案に。</p>
+      <label>プロンプト (日本語可)</label>
+      <textarea id="q-prompt">銀髪の少女、制服、桜並木、アニメ調</textarea>
+      <label>スタイル</label>
+      <select id="q-style">
+        <option value="anime illustration, highly detailed, vibrant colors, masterpiece">イラスト</option>
+        <option value="photorealistic portrait photo, 85mm, natural light, sharp focus, 8k">実写人物</option>
+        <option value="character design sheet, full body, front view, side view, back view, A-pose, plain white background">キャラデザ (3面図)</option>
+        <option value="">指定なし</option>
+      </select>
+      <div class="row">
+        <div><label>幅</label><input id="q-w" type="number" value="832" step="64"></div>
+        <div><label>高さ</label><input id="q-h" type="number" value="1216" step="64"></div>
+      </div>
+      <div class="row">
+        <div><label>シード (-1=ランダム)</label><input id="q-seed" type="number" value="-1"></div>
+        <div><label>枚数</label><input id="q-n" type="number" value="2" min="1" max="4"></div>
+      </div>
+      <button class="btn" id="q-go">生成</button>
+    </div>
+    <div class="out" id="q-out"></div>
+  </div>
+</section>
+
+<section id="gpu">
+  <div class="grid">
+    <div class="card">
+      <label>ComfyUI URL (notebook 01 の ③ で表示)</label>
+      <input id="api" placeholder="https://xxxx.trycloudflare.com">
+      <button class="btn sub" id="connect">接続 / モデル一覧更新</button>
+      <div class="status" id="conn-status"></div>
+      <label>モード</label>
+      <select id="mode">
+        <option value="flux_gguf">画像: Flux schnell GGUF (高速)</option>
+        <option value="sdxl">画像: SDXL (自作LoRA)</option>
+        <option value="wan22_video">動画: Wan2.2 5B GGUF</option>
+      </select>
+      <div data-m="flux_gguf wan22_video"><label>UNet (GGUF)</label><select id="unet"></select></div>
+      <div data-m="sdxl"><label>チェックポイント</label><select id="ckpt"></select></div>
+      <label>プロンプト (英語推奨)</label>
+      <textarea id="prompt">1girl, silver hair, school uniform, cherry blossoms, masterpiece, best quality</textarea>
+      <div data-m="sdxl wan22_video"><label>ネガティブ</label><textarea id="negative" style="min-height:50px"></textarea></div>
+      <div data-m="flux_gguf sdxl" class="row">
+        <div><label>LoRA</label><select id="lora"></select></div>
+        <div><label>LoRA 強度</label><input id="lora_strength" type="number" value="0.8" step="0.05"></div>
+      </div>
+      <div data-m="wan22_video"><label>開始画像 (空=テキスト→動画)</label><input id="image" type="file" accept="image/*"></div>
+      <div class="row">
+        <div><label>幅</label><input id="width" type="number" step="16"></div>
+        <div><label>高さ</label><input id="height" type="number" step="16"></div>
+      </div>
+      <div class="row">
+        <div><label>ステップ</label><input id="steps" type="number"></div>
+        <div><label>シード (-1=ランダム)</label><input id="seed" type="number" value="-1"></div>
+      </div>
+      <div data-m="wan22_video"><label>フレーム数 (4n+1, 24fps)</label><input id="frames" type="number" value="49" step="4"></div>
+      <button class="btn" id="go">生成</button>
+      <div class="status" id="status"></div>
+    </div>
+    <div class="out" id="out"></div>
+  </div>
+</section>
+
+<section id="3d">
+  <div class="grid">
+    <div class="card">
+      <p class="hint">notebook 03 で作った GLB を表示 (ファイルはブラウザ内だけで処理)。</p>
+      <label>GLB / glTF ファイル</label>
+      <input id="glb" type="file" accept=".glb,.gltf,.vrm">
+      <p class="hint">3D 化向けの元画像を作るコツ: クイック生成のスタイル「キャラデザ」で正面全身・白背景の画像を作り、正面だけ切り出して notebook 03 に入力。</p>
+      <p class="hint">高品質化: <a href="https://huggingface.co/spaces/tencent/Hunyuan3D-2.1" target="_blank">Hunyuan3D-2.1</a> / <a href="https://huggingface.co/spaces/trellis-community/TRELLIS" target="_blank">TRELLIS</a></p>
+    </div>
+    <model-viewer id="viewer" camera-controls auto-rotate shadow-intensity="1" alt="3D モデル"></model-viewer>
+  </div>
+</section>
+
+<section id="guide">
+  <div class="card">
+    <h3>ノートブック (Google Colab 無料 T4)</h3>
+    <ol>
+      <li><a href="https://colab.research.google.com/github/hiirocreate/personalizeAI/blob/main/notebooks/01_comfyui_server.ipynb" target="_blank">01 画像・動画生成サーバー</a> — 起動後の URL を「Colab GPU」タブへ</li>
+      <li><a href="https://colab.research.google.com/github/hiirocreate/personalizeAI/blob/main/notebooks/02_lora_training.ipynb" target="_blank">02 LoRA 学習</a> — Drive の画像から SDXL LoRA を作成</li>
+      <li><a href="https://colab.research.google.com/github/hiirocreate/personalizeAI/blob/main/notebooks/03_3d_model.ipynb" target="_blank">03 3D モデル生成</a> — 画像 → GLB</li>
+    </ol>
+    <p class="hint">詳細は <a href="https://github.com/hiirocreate/personalizeAI#readme" target="_blank">README</a>。</p>
+  </div>
+</section>
+</main>
+<script src="app.js"></script>
+</body>
+</html>
