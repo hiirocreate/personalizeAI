@@ -1,0 +1,26 @@
+{
+  "name": "SDXL (イラスト/実写・自作LoRA対応)",
+  "params": {
+    "ckpt": ["1", "ckpt_name"],
+    "prompt": ["4", "text"],
+    "negative": ["5", "text"],
+    "width": ["6", "width"],
+    "height": ["6", "height"],
+    "seed": ["7", "seed"],
+    "steps": ["7", "steps"],
+    "cfg": ["7", "cfg"],
+    "lora": ["10", "lora_name"],
+    "lora_strength": ["10", "strength_model"]
+  },
+  "optional": { "lora": { "node": "10", "passthrough": { "0": "model", "1": "clip" } } },
+  "workflow": {
+    "1": { "class_type": "CheckpointLoaderSimple", "inputs": { "ckpt_name": "animagine-xl-4.0-opt.safetensors" } },
+    "10": { "class_type": "LoraLoader", "inputs": { "model": ["1", 0], "clip": ["1", 1], "lora_name": "", "strength_model": 1.0, "strength_clip": 1.0 } },
+    "4": { "class_type": "CLIPTextEncode", "inputs": { "text": "", "clip": ["10", 1] } },
+    "5": { "class_type": "CLIPTextEncode", "inputs": { "text": "lowres, bad anatomy, bad hands, text, error, worst quality, low quality, blurry, watermark", "clip": ["10", 1] } },
+    "6": { "class_type": "EmptyLatentImage", "inputs": { "width": 832, "height": 1216, "batch_size": 1 } },
+    "7": { "class_type": "KSampler", "inputs": { "model": ["10", 0], "positive": ["4", 0], "negative": ["5", 0], "latent_image": ["6", 0], "seed": 0, "steps": 28, "cfg": 5.0, "sampler_name": "euler_ancestral", "scheduler": "normal", "denoise": 1.0 } },
+    "8": { "class_type": "VAEDecode", "inputs": { "samples": ["7", 0], "vae": ["1", 2] } },
+    "9": { "class_type": "SaveImage", "inputs": { "images": ["8", 0], "filename_prefix": "sdxl" } }
+  }
+}
