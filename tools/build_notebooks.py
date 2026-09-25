@@ -208,9 +208,15 @@ SRC = f"{BASE}/datasets/{DATASET}"
 IMG = f"/content/train/{DATASET}"
 shutil.rmtree(IMG, ignore_errors=True); os.makedirs(IMG)
 os.makedirs(SRC, exist_ok=True)  # フォルダは自動作成
-exts = (".png", ".jpg", ".jpeg", ".webp")
-imgs = [f for f in glob.glob(f"{SRC}/*") if f.lower().endswith(exts)]
-if UPLOAD or not imgs:
+sh("pip install -q pillow-heif")
+from PIL import Image
+import pillow_heif; pillow_heif.register_heif_opener()  # iPhone の HEIC 対応
+
+def scan():
+    return [f for f in glob.glob(f"{SRC}/**/*", recursive=True)
+            if os.path.isfile(f) and "__MACOSX" not in f and not os.path.basename(f).startswith(".")]
+
+if UPLOAD or not scan():
     from google.colab import files
     print(f"画像 (複数可) または zip を選択 → {SRC} に保存します")
     for name, data in files.upload().items():
@@ -219,19 +225,26 @@ if UPLOAD or not imgs:
             zipfile.ZipFile(io.BytesIO(data)).extractall(SRC)
         else:
             open(f"{SRC}/{name}", "wb").write(data)
-    imgs = [f for f in glob.glob(f"{SRC}/**/*", recursive=True) if f.lower().endswith(exts) and "__MACOSX" not in f]
-    for f in imgs:
-        if os.path.dirname(f) != SRC: shutil.move(f, SRC)
-    imgs = [f for f in glob.glob(f"{SRC}/*") if f.lower().endswith(exts)]
-assert imgs, f"{SRC} に画像がありません"
-for f in glob.glob(f"{SRC}/*"):
-    if f.lower().endswith(exts + (".txt",)): shutil.copy(f, IMG)
+
+# 形式/大文字拡張子/サブフォルダを問わず PNG に変換して学習フォルダへ
+imgs = []
+for f in scan():
+    if f.lower().endswith(".txt"): continue
+    try:
+        im = Image.open(f).convert("RGB")
+    except Exception:
+        print("スキップ (画像でない):", f); continue
+    stem = os.path.splitext(os.path.relpath(f, SRC))[0].replace("/", "_")
+    im.save(f"{IMG}/{stem}.png"); imgs.append(f"{IMG}/{stem}.png")
+    if os.path.exists(os.path.splitext(f)[0] + ".txt"):
+        shutil.copy(os.path.splitext(f)[0] + ".txt", f"{IMG}/{stem}.txt")
+assert imgs, f"{SRC} に画像がありません。中身: {os.listdir(SRC)}"
 print(len(imgs), "枚")
 if CAPTION == "wd14":
     sh(f"cd {S} && python finetune/tag_images_by_wd14_tagger.py --onnx --repo_id SmilingWolf/wd-eva02-large-tagger-v3 "
        f"--batch_size 4 --caption_extension .txt --remove_underscore --thresh 0.35 {IMG}")
 for f in imgs:
-    txt = os.path.join(IMG, os.path.splitext(os.path.basename(f))[0] + ".txt")
+    txt = os.path.splitext(f)[0] + ".txt"
     tags = open(txt).read().strip() if os.path.exists(txt) and CAPTION != "trigger_only" else ""
     with open(txt, "w") as w: w.write(", ".join(filter(None, [TRIGGER, tags])))
 print("例:", open(txt).read()[:300])
