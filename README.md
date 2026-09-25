@@ -53,7 +53,7 @@ GGUF 量子化モデルで無料 T4 GPU (VRAM 15GB / RAM 12GB) でも軽く動�
 目安 (T4): Flux schnell 1024px ≈ 20〜40 秒 / SDXL 28 step ≈ 30〜50 秒 / Wan2.2 832×480・49 フレーム ≈ 5〜10 分
 
 ### LoRA 学習
-1. Drive の `personalizeAI/datasets/<名前>/` に画像 15〜40 枚 (顔・全身・角度を混ぜる、背景は多様に)
+1. 画像 15〜40 枚を用意 (顔・全身・角度を混ぜる、背景は多様に)。`02` の ③ 実行時にアップロード (zip 可)。Drive のフォルダは自動作成
 2. `02` を実行 → `personalizeAI/loras/<名前>.safetensors` が完成
 3. `01` を (再) 起動 → Web UI の SDXL モードで LoRA を選択。プロンプトにトリガーワードを入れる
 

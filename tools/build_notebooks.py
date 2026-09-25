@@ -96,7 +96,7 @@ if FLUX:
     dl(f"{HF}/city96/FLUX.1-schnell-gguf/resolve/main/flux1-schnell-{{FLUX_QUANT}}.gguf", f"{{M}}/unet")
     dl(f"{HF}/city96/t5-v1_1-xxl-encoder-gguf/resolve/main/t5-v1_1-xxl-encoder-Q5_K_M.gguf", f"{{M}}/clip")
     dl(f"{HF}/comfyanonymous/flux_text_encoders/resolve/main/clip_l.safetensors", f"{{M}}/clip")
-    dl(f"{HF}/black-forest-labs/FLUX.1-schnell/resolve/main/ae.safetensors", f"{{M}}/vae")
+    dl(f"{HF}/Comfy-Org/Lumina_Image_2.0_Repackaged/resolve/main/split_files/vae/ae.safetensors", f"{{M}}/vae")
 if SDXL_ILLUST:
     dl(f"{HF}/cagliostrolab/animagine-xl-4.0/resolve/main/animagine-xl-4.0-opt.safetensors", f"{{M}}/checkpoints")
 if SDXL_PHOTO:
@@ -161,7 +161,7 @@ nb2 = [
 
 自分のキャラクター・画風・人物を LoRA として学習します (Colab 無料 T4 で動作する省メモリ設定)。
 
-1. Google Drive の `MyDrive/personalizeAI/datasets/<データ名>/` に画像を 15〜40 枚入れる
+1. 画像 15〜40 枚を用意 (③ 実行時にアップロード。保存先 `MyDrive/personalizeAI/datasets/<データ名>/` は自動作成)
 2. 設定して上から実行 (目安: 20枚×10エポックで 30〜60 分)
 3. 完成した LoRA は `MyDrive/personalizeAI/loras/` に保存 → `01_comfyui_server` の SDXL モードで使用
 
@@ -174,6 +174,8 @@ nb2 = [
 #@title ① 設定
 USE_DRIVE = True  #@param {type:"boolean"}
 DATASET = "mychara"  #@param {type:"string"}
+#@markdown ✅ で ③ 実行時にスマホ/PC から画像 (または zip) をアップロード。Drive のフォルダは自動作成
+UPLOAD = True  #@param {type:"boolean"}
 TRIGGER = "mychara"  #@param {type:"string"}
 BASE_MODEL = "animagine"  #@param ["animagine", "realvis"]
 CAPTION = "wd14"  #@param ["wd14", "trigger_only", "existing"]
@@ -190,7 +192,7 @@ HF_TOKEN = ""  #@param {type:"string"}
 S = "/content/sd-scripts"
 if not os.path.exists(S):
     sh(f"git clone -q --depth 1 https://github.com/kohya-ss/sd-scripts {{S}}")
-    sh(f"cd {{S}} && pip install -q -r requirements.txt bitsandbytes onnxruntime-gpu")
+    sh(f"cd {{S}} && pip install -q -r requirements.txt bitsandbytes onnx onnxruntime-gpu")
 CKPT = {{
     "animagine": ("{HF}/cagliostrolab/animagine-xl-4.0/resolve/main/animagine-xl-4.0-opt.safetensors", "animagine-xl-4.0-opt.safetensors"),
     "realvis": ("{HF}/SG161222/RealVisXL_V5.0/resolve/main/RealVisXL_V5.0_fp16.safetensors", "RealVisXL_V5.0_fp16.safetensors"),
@@ -205,17 +207,44 @@ import glob, shutil
 SRC = f"{BASE}/datasets/{DATASET}"
 IMG = f"/content/train/{DATASET}"
 shutil.rmtree(IMG, ignore_errors=True); os.makedirs(IMG)
-exts = (".png", ".jpg", ".jpeg", ".webp")
-imgs = [f for f in glob.glob(f"{SRC}/*") if f.lower().endswith(exts)]
-assert imgs, f"{SRC} に画像がありません"
-for f in glob.glob(f"{SRC}/*"):
-    if f.lower().endswith(exts + (".txt",)): shutil.copy(f, IMG)
+os.makedirs(SRC, exist_ok=True)  # フォルダは自動作成
+sh("pip install -q pillow-heif")
+from PIL import Image
+import pillow_heif; pillow_heif.register_heif_opener()  # iPhone の HEIC 対応
+
+def scan():
+    return [f for f in glob.glob(f"{SRC}/**/*", recursive=True)
+            if os.path.isfile(f) and "__MACOSX" not in f and not os.path.basename(f).startswith(".")]
+
+if UPLOAD or not scan():
+    from google.colab import files
+    print(f"画像 (複数可) または zip を選択 → {SRC} に保存します")
+    for name, data in files.upload().items():
+        if name.lower().endswith(".zip"):
+            import zipfile, io
+            zipfile.ZipFile(io.BytesIO(data)).extractall(SRC)
+        else:
+            open(f"{SRC}/{name}", "wb").write(data)
+
+# 形式/大文字拡張子/サブフォルダを問わず PNG に変換して学習フォルダへ
+imgs = []
+for f in scan():
+    if f.lower().endswith(".txt"): continue
+    try:
+        im = Image.open(f).convert("RGB")
+    except Exception:
+        print("スキップ (画像でない):", f); continue
+    stem = os.path.splitext(os.path.relpath(f, SRC))[0].replace("/", "_")
+    im.save(f"{IMG}/{stem}.png"); imgs.append(f"{IMG}/{stem}.png")
+    if os.path.exists(os.path.splitext(f)[0] + ".txt"):
+        shutil.copy(os.path.splitext(f)[0] + ".txt", f"{IMG}/{stem}.txt")
+assert imgs, f"{SRC} に画像がありません。中身: {os.listdir(SRC)}"
 print(len(imgs), "枚")
 if CAPTION == "wd14":
     sh(f"cd {S} && python finetune/tag_images_by_wd14_tagger.py --onnx --repo_id SmilingWolf/wd-eva02-large-tagger-v3 "
        f"--batch_size 4 --caption_extension .txt --remove_underscore --thresh 0.35 {IMG}")
 for f in imgs:
-    txt = os.path.join(IMG, os.path.splitext(os.path.basename(f))[0] + ".txt")
+    txt = os.path.splitext(f)[0] + ".txt"
     tags = open(txt).read().strip() if os.path.exists(txt) and CAPTION != "trigger_only" else ""
     with open(txt, "w") as w: w.write(", ".join(filter(None, [TRIGGER, tags])))
 print("例:", open(txt).read()[:300])
