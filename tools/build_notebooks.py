@@ -161,7 +161,7 @@ nb2 = [
 
 自分のキャラクター・画風・人物を LoRA として学習します (Colab 無料 T4 で動作する省メモリ設定)。
 
-1. Google Drive の `MyDrive/personalizeAI/datasets/<データ名>/` に画像を 15〜40 枚入れる
+1. 画像 15〜40 枚を用意 (③ 実行時にアップロード。保存先 `MyDrive/personalizeAI/datasets/<データ名>/` は自動作成)
 2. 設定して上から実行 (目安: 20枚×10エポックで 30〜60 分)
 3. 完成した LoRA は `MyDrive/personalizeAI/loras/` に保存 → `01_comfyui_server` の SDXL モードで使用
 
@@ -174,6 +174,8 @@ nb2 = [
 #@title ① 設定
 USE_DRIVE = True  #@param {type:"boolean"}
 DATASET = "mychara"  #@param {type:"string"}
+#@markdown ✅ で ③ 実行時にスマホ/PC から画像 (または zip) をアップロード。Drive のフォルダは自動作成
+UPLOAD = True  #@param {type:"boolean"}
 TRIGGER = "mychara"  #@param {type:"string"}
 BASE_MODEL = "animagine"  #@param ["animagine", "realvis"]
 CAPTION = "wd14"  #@param ["wd14", "trigger_only", "existing"]
@@ -205,8 +207,22 @@ import glob, shutil
 SRC = f"{BASE}/datasets/{DATASET}"
 IMG = f"/content/train/{DATASET}"
 shutil.rmtree(IMG, ignore_errors=True); os.makedirs(IMG)
+os.makedirs(SRC, exist_ok=True)  # フォルダは自動作成
 exts = (".png", ".jpg", ".jpeg", ".webp")
 imgs = [f for f in glob.glob(f"{SRC}/*") if f.lower().endswith(exts)]
+if UPLOAD or not imgs:
+    from google.colab import files
+    print(f"画像 (複数可) または zip を選択 → {SRC} に保存します")
+    for name, data in files.upload().items():
+        if name.lower().endswith(".zip"):
+            import zipfile, io
+            zipfile.ZipFile(io.BytesIO(data)).extractall(SRC)
+        else:
+            open(f"{SRC}/{name}", "wb").write(data)
+    imgs = [f for f in glob.glob(f"{SRC}/**/*", recursive=True) if f.lower().endswith(exts) and "__MACOSX" not in f]
+    for f in imgs:
+        if os.path.dirname(f) != SRC: shutil.move(f, SRC)
+    imgs = [f for f in glob.glob(f"{SRC}/*") if f.lower().endswith(exts)]
 assert imgs, f"{SRC} に画像がありません"
 for f in glob.glob(f"{SRC}/*"):
     if f.lower().endswith(exts + (".txt",)): shutil.copy(f, IMG)
