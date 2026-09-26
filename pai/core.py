@@ -1,5 +1,6 @@
 """環境セットアップ・モデル取得・ComfyUI プロセス管理。"""
 import os
+import shutil
 import socket
 import subprocess
 import threading
@@ -67,8 +68,11 @@ def ensure(key):
             if os.path.exists(f"{dst}/{name}"):
                 continue
             os.makedirs(dst, exist_ok=True)
-            sh(f'aria2c -q -x16 -s16 -k1M --console-log-level=error --allow-overwrite=true '
-               f'-d "{dst}" -o "{name}.part" "{url}"')
+            if shutil.which("aria2c"):
+                sh(f'aria2c -q -x16 -s16 -k1M --console-log-level=error --allow-overwrite=true '
+                   f'-d "{dst}" -o "{name}.part" "{url}"')
+            else:
+                sh(f'curl -sSfL -o "{dst}/{name}.part" "{url}"')
             os.rename(f"{dst}/{name}.part", f"{dst}/{name}")
 
 
@@ -81,17 +85,14 @@ _proc = None
 
 
 def install():
-    if not os.path.exists("/usr/bin/aria2c"):
-        sh("apt-get -qq install -y aria2")
+    if not shutil.which("aria2c"):
+        subprocess.run("(apt-get -qq install -y aria2 || (apt-get -qq update && apt-get -qq install -y aria2))",
+                       shell=True, capture_output=True)  # 失敗しても curl で代替
     if not os.path.exists(COMFY):
         print("ComfyUI をインストール中…")
         sh(f"git clone -q --depth 1 https://github.com/comfyanonymous/ComfyUI {COMFY}")
         sh(f"git clone -q --depth 1 https://github.com/city96/ComfyUI-GGUF {COMFY}/custom_nodes/ComfyUI-GGUF")
         sh(f"pip install -q -r {COMFY}/requirements.txt gguf pillow-heif")
-    try:
-        import gradio  # noqa: F401
-    except ImportError:
-        sh('pip install -q "gradio>=5,<6"')
     loras = f"{MODELS}/loras"
     if not os.path.islink(loras):
         sh(f'rm -rf "{loras}" && ln -s "{DATA}/loras" "{loras}"')
