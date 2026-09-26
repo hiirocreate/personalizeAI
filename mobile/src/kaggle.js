@@ -10,24 +10,51 @@ export const creds = {
   set(v) { localStorage.setItem("kaggle", JSON.stringify(v)); },
 };
 
-function authHeader() {
+function parseKey(raw) {
+  // kaggle.json の中身をそのまま貼った場合にも対応
+  try { const j = JSON.parse(raw); if (j.key) return { key: j.key, user: j.username }; } catch { /* 文字列 */ }
+  return { key: raw.trim() };
+}
+
+function header(mode) {
   const { user, key } = creds.get();
-  if (!user || !key) throw new Error("設定で Kaggle のユーザー名と API トークンを入力してください");
-  // 新形式トークン (KGAT_...) は Bearer、旧形式 API キーは Basic
-  return key.startsWith("KGAT_") ? `Bearer ${key}` : `Basic ${btoa(`${user}:${key}`)}`;
+  // 新形式 API トークンは Bearer、旧形式 (kaggle.json の 32 桁 key) は Basic
+  return mode === "basic" ? `Basic ${btoa(`${user}:${key}`)}` : `Bearer ${key}`;
 }
 
 async function call(service, method, body = {}) {
-  const r = await fetch(`${API}/${service}/${method}`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", Authorization: authHeader() },
-    body: JSON.stringify(body),
-  });
-  const text = await r.text();
-  if (!r.ok) throw new Error(`Kaggle API ${r.status}: ${text.slice(0, 300)}`);
-  const data = text ? (typeof text === "string" ? JSON.parse(text) : text) : {};
-  if (data.error) throw new Error(data.error);
-  return data;
+  const c = creds.get();
+  if (!c.key) throw new Error("⚙️ 設定で Kaggle の API トークンを入力してください");
+  const first = c.mode || (/^[0-9a-f]{32}$/i.test(c.key) ? "basic" : "bearer");
+  for (const mode of [first, first === "basic" ? "bearer" : "basic"]) {
+    if (mode === "basic" && !c.user) continue;
+    const r = await fetch(`${API}/${service}/${method}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: header(mode) },
+      body: JSON.stringify(body),
+    });
+    const text = await r.text();
+    if (r.status === 401) continue; // もう一方の認証方式で再試行
+    if (!r.ok) throw new Error(`Kaggle API ${r.status}: ${String(text).slice(0, 300)}`);
+    if (c.mode !== mode) creds.set({ ...creds.get(), mode });
+    const data = text ? (typeof text === "string" ? JSON.parse(text) : text) : {};
+    if (data.error) throw new Error(typeof data.error === "string" ? data.error : JSON.stringify(data.error));
+    return data;
+  }
+  throw new Error("認証に失敗しました。Kaggle の設定ページ → API → Create New Token で作ったトークンを貼り直してください"
+    + (c.user ? "" : " (旧形式のキーの場合はユーザー名も必要)"));
+}
+
+/** 入力されたユーザー名/トークンを保存し、トークンから正しいユーザー名を確認する */
+export async function login(userInput, keyInput) {
+  const p = parseKey(keyInput);
+  creds.set({ user: (p.user || userInput || "").trim(), key: p.key });
+  try {
+    const r = await call("security.OAuthService", "IntrospectToken", { token: p.key });
+    if (r.active && r.username) creds.set({ ...creds.get(), user: r.username });
+  } catch { /* 旧形式キーは introspect 非対応。ユーザー名入力を使う */ }
+  if (!creds.get().user) throw new Error("ユーザー名を入力してください");
+  return creds.get().user;
 }
 
 const K = "kernels.KernelsApiService";

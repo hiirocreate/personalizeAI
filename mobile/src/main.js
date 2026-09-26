@@ -54,16 +54,16 @@ function openSettings() {
 $("open-settings").onclick = openSettings;
 $("k-close").onclick = () => $("settings").close();
 $("k-save").onclick = async () => {
-  kaggle.creds.set({ user: $("k-user").value.trim(), key: $("k-key").value.trim() });
   status("k-status", "接続テスト中…");
   try {
+    $("k-user").value = await kaggle.login($("k-user").value, $("k-key").value);
     const q = await kaggle.quota();
     status("k-status", `✅ 接続OK — 今週の GPU 残り ${(q.total - q.used).toFixed(1)} / ${q.total.toFixed(0)} 時間`);
   } catch (e) { status("k-status", "❌ " + e.message, true); }
 };
 function needCreds(statusId) {
   const c = kaggle.creds.get();
-  if (c.user && c.key) return false;
+  if (c.user && c.key && c.mode) return false;
   status(statusId, "先に ⚙️ 設定で Kaggle を登録してください", true);
   openSettings();
   return true;
