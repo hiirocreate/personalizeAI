@@ -93,10 +93,18 @@ const K = "kernels.KernelsApiService";
 const D = "datasets.DatasetApiService";
 const secs = (d) => parseFloat(String(d || "0").replace("s", "")) || 0;
 
+/** 接続テスト: 自分のノートブック一覧 (公式 CLI の `kaggle kernels list -m` と同じ API) を取得 */
+export async function ping() {
+  await call(K, "ListKernels", { user: creds.get().user, pageSize: 1, page: 1 });
+}
+
+/** GPU 残り時間 (API トークンでは取得できない場合があるため失敗時は null) */
 export async function quota() {
-  const r = await call(K, "GetAcceleratorQuotaStatistics");
-  const q = r.gpuQuota || {};
-  return { used: secs(q.timeUsed) / 3600, total: secs(q.totalTimeAllowed) / 3600 };
+  try {
+    const r = await call(K, "GetAcceleratorQuotaStatistics");
+    const q = r.gpuQuota || {};
+    return { used: secs(q.timeUsed) / 3600, total: secs(q.totalTimeAllowed) / 3600 };
+  } catch { return null; }
 }
 
 export function script(job, files = {}) {
