@@ -45,9 +45,21 @@ async function call(service, method, body = {}) {
     if (data.error) throw new Error(typeof data.error === "string" ? data.error : JSON.stringify(data.error));
     return data;
   }
+  // 送信したヘッダーが途中で落ちていないかを、エコーサービスで確認 (トークン本体は送らない)
+  let echo = "";
+  try {
+    const r = await fetch("https://httpbin.org/anything", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "User-Agent": "kaggle-api/v1.7.0", Authorization: "Bearer KGAT_test" },
+      body: "{}",
+    });
+    const t = await r.text();
+    const h = (typeof t === "string" ? JSON.parse(t) : t).headers || {};
+    echo = `\necho: Authorization=${h.Authorization || h.authorization || "(届いていない)"} UA=${(h["User-Agent"] || "").slice(0, 40)}`;
+  } catch (e) { echo = `\necho: ${e.message}`; }
   throw new Error("認証に失敗しました。Kaggle の設定ページ → API → Create New Token で作ったトークンを貼り直してください"
     + (c.user ? "" : " (旧形式のキーの場合はユーザー名も必要)")
-    + `\n[診断] トークン長 ${c.key.length} 文字 / 先頭 ${c.key.slice(0, 5)}… / ユーザー名 ${c.user || "(未入力)"}\n` + tried.join("\n"));
+    + `\n[診断] トークン長 ${c.key.length} 文字 / 先頭 ${c.key.slice(0, 5)}… / ユーザー名 ${c.user || "(未入力)"}\n` + tried.join("\n") + echo);
 }
 
 /** トークンの有効性を Kaggle に問い合わせる (認証ヘッダー不要の公式エンドポイント) */
