@@ -31,7 +31,7 @@ async function call(service, method, body = {}) {
     if (mode === "basic" && !c.user) { tried.push("basic: ユーザー名なしのため省略"); continue; }
     const r = await fetch(`${API}/${service}/${method}`, {
       method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: header(mode) },
+      headers: { "Content-Type": "application/json", "User-Agent": "kaggle-api/v1.7.0", Authorization: header(mode) },
       body: JSON.stringify(body),
     });
     const text = await r.text();
@@ -50,14 +50,29 @@ async function call(service, method, body = {}) {
     + `\n[診断] トークン長 ${c.key.length} 文字 / 先頭 ${c.key.slice(0, 5)}… / ユーザー名 ${c.user || "(未入力)"}\n` + tried.join("\n"));
 }
 
+/** トークンの有効性を Kaggle に問い合わせる (認証ヘッダー不要の公式エンドポイント) */
+async function introspect(token) {
+  const r = await fetch(`${API}/security.OAuthService/IntrospectToken`, {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ token }),
+  });
+  const text = await r.text();
+  try { return { status: r.status, ...(typeof text === "string" ? JSON.parse(text) : text) }; }
+  catch { return { status: r.status, raw: String(text).slice(0, 120) }; }
+}
+
 /** 入力されたユーザー名/トークンを保存し、トークンから正しいユーザー名を確認する */
 export async function login(userInput, keyInput) {
   const p = parseKey(keyInput);
   creds.set({ user: (p.user || userInput || "").trim(), key: p.key });
-  try {
-    const r = await call("security.OAuthService", "IntrospectToken", { token: p.key });
-    if (r.active && r.username) creds.set({ ...creds.get(), user: r.username });
-  } catch { /* 旧形式キーは introspect 非対応。ユーザー名入力を使う */ }
+  if (!/^[0-9a-f]{32}$/i.test(p.key)) { // 新形式トークン
+    const info = await introspect(p.key);
+    if (!info.active) {
+      throw new Error("このトークンは Kaggle 側で「無効」と判定されました (コピーの欠け・失効・別アカウントの可能性)。"
+        + "Kaggle の設定ページ → API で新しいトークンを作り、表示された直後にコピーして貼ってください。"
+        + `\n[診断] 長さ ${p.key.length} / 先頭 ${p.key.slice(0, 5)}… / 応答 ${info.status} ${JSON.stringify(info).slice(0, 150)}`);
+    }
+    creds.set({ ...creds.get(), user: info.username || creds.get().user, mode: "bearer" });
+  }
   if (!creds.get().user) throw new Error("ユーザー名を入力してください");
   return creds.get().user;
 }
