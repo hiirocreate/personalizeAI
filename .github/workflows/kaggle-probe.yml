@@ -1,0 +1,18 @@
+name: kaggle-probe
+on:
+  push:
+    branches: [claude/compassionate-volta-pqts6v]
+    paths: [.github/workflows/kaggle-probe.yml]
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - run: |
+          for auth in "" "Authorization: Bearer KGAT_00000000000000000000000000000000" "Authorization: Basic dTox"; do
+            for url in https://api.kaggle.com/v1/kernels.KernelsApiService/GetAcceleratorQuotaStatistics https://api.kaggle.com/v1/security.OAuthService/IntrospectToken https://www.kaggle.com/api/v1/kernels/list; do
+              echo "== [$auth] $url"
+              curl -sS -m 20 -X POST -H "Content-Type: application/json" ${auth:+-H "$auth"} -d '{}' -w "\nHTTP %{http_code} redirect=%{redirect_url}\n" "$url" | head -c 400; echo
+            done
+          done
+          pip install -q kaggle kagglesdk && python -c "import kagglesdk,kaggle;print('sdk', kagglesdk.__version__ if hasattr(kagglesdk,'__version__') else '?')"
+          KAGGLE_API_TOKEN=KGAT_00000000000000000000000000000000 kaggle kernels list -m 2>&1 | tail -5 || true
