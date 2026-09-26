@@ -86,7 +86,8 @@ class Comfy:
     def download(self, file, out_dir="outputs"):
         os.makedirs(out_dir, exist_ok=True)
         q = urllib.parse.urlencode({k: file.get(k, "") for k in ("filename", "subfolder", "type")})
-        dst = os.path.join(out_dir, file["filename"])
+        # ComfyUI は再起動で連番が戻るため、日時を付けて上書きを防ぐ
+        dst = os.path.join(out_dir, time.strftime("%Y%m%d-%H%M%S_") + file["filename"])
         with open(dst, "wb") as f:
             f.write(self._get(f"/view?{q}"))
         return dst
