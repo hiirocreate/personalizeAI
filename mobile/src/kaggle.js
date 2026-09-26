@@ -1,8 +1,42 @@
-// Kaggle 公式 API (kagglesdk と同じ RPC エンドポイント) クライアント
+// Kaggle 公式 API クライアント (公式ドキュメントの www.kaggle.com/api/v1 を優先し、RPC 形式にもフォールバック)
 import { Filesystem, Directory } from "@capacitor/filesystem";
 import { FileTransfer } from "@capacitor/file-transfer";
 
 const API = "https://api.kaggle.com/v1";
+const WWW = "https://www.kaggle.com/api/v1";
+// RPC 名 → REST (kagglesdk の各リクエスト型に定義された endpoint/method)
+const ROUTES = {
+  "kernels.KernelsApiService/ListKernels": ["GET", "/kernels/list"],
+  "kernels.KernelsApiService/GetAcceleratorQuotaStatistics": ["GET", "/kernels/quota"],
+  "kernels.KernelsApiService/SaveKernel": ["POST", "/kernels/push"],
+  "kernels.KernelsApiService/GetKernelSessionStatus": ["GET", "/kernels/status"],
+  "kernels.KernelsApiService/ListKernelSessionOutput": ["GET", "/kernels/output"],
+  "kernels.KernelsApiService/DeleteKernel": ["POST", "/kernels/delete/{userName}/{kernelSlug}"],
+  "blobs.BlobApiService/StartBlobUpload": ["POST", "/blobs/upload"],
+  "datasets.DatasetApiService/CreateDataset": ["POST", "/datasets/create/new"],
+  "datasets.DatasetApiService/GetDatasetStatus": ["GET", "/datasets/status/{ownerSlug}/{datasetSlug}"],
+  "datasets.DatasetApiService/DeleteDataset": ["POST", "/dataset/{ownerSlug}/{datasetSlug}/delete"],
+  "security.OAuthService/IntrospectToken": ["POST", "/oauth2/introspect"],
+};
+
+function restRequest(service, method, body) {
+  const route = ROUTES[`${service}/${method}`];
+  if (!route) return null;
+  const params = { ...body };
+  const path = route[1].replace(/\{(\w+)\}/g, (_, k) => { const v = params[k]; delete params[k]; return encodeURIComponent(v ?? ""); });
+  if (route[0] === "GET") {
+    const q = new URLSearchParams(Object.entries(params).filter(([, v]) => v !== undefined && v !== ""));
+    return { url: `${WWW}${path}${q.toString() ? "?" + q : ""}`, init: { method: "GET" } };
+  }
+  return { url: `${WWW}${path}`, init: { method: "POST", body: JSON.stringify(params) } };
+}
+
+function parseJson(text) {
+  if (typeof text !== "string") return text;
+  if (!text) return {};
+  const d = JSON.parse(text); // HTML 等なら例外
+  return typeof d === "string" ? { status: d } : d;
+}
 const REPO = "https://github.com/hiirocreate/personalizeAI";
 
 export const creds = {
@@ -29,21 +63,26 @@ async function call(service, method, body = {}) {
   const tried = [];
   for (const mode of [first, first === "basic" ? "bearer" : "basic"]) {
     if (mode === "basic" && !c.user) { tried.push("basic: ユーザー名なしのため省略"); continue; }
-    const r = await fetch(`${API}/${service}/${method}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "User-Agent": "kaggle-api/v1.7.0", Authorization: header(mode) },
-      body: JSON.stringify(body),
-    });
-    const text = await r.text();
-    if (r.status === 401 || r.status === 403) { // もう一方の認証方式で再試行
-      tried.push(`${mode}: ${r.status} ${String(text).slice(0, 120)}`);
-      continue;
+    const headers = { "Content-Type": "application/json", "User-Agent": "kaggle-api/v1.7.0", Authorization: header(mode) };
+    const rest = restRequest(service, method, body);
+    const attempts = [
+      ...(rest ? [["www", rest.url, rest.init]] : []),
+      ["rpc", `${API}/${service}/${method}`, { method: "POST", body: JSON.stringify(body) }],
+    ];
+    let unauthorized = false;
+    for (const [label, url, init] of attempts) {
+      const r = await fetch(url, { ...init, headers });
+      const text = await r.text();
+      let data;
+      try { data = parseJson(text); } catch { tried.push(`${mode}/${label}: ${r.status} (JSON 以外)`); continue; }
+      if (r.status === 401 || r.status === 403) { tried.push(`${mode}/${label}: ${r.status} ${String(text).slice(0, 100)}`); unauthorized = true; continue; }
+      if (r.status === 404 && label === "www") { tried.push(`${mode}/www: 404`); continue; }
+      if (!r.ok) throw new Error(`Kaggle API ${r.status}: ${String(text).slice(0, 300)}`);
+      if (c.mode !== mode) creds.set({ ...creds.get(), mode });
+      if (data.error) throw new Error(typeof data.error === "string" ? data.error : JSON.stringify(data.error));
+      return data;
     }
-    if (!r.ok) throw new Error(`Kaggle API ${r.status}: ${String(text).slice(0, 300)}`);
-    if (c.mode !== mode) creds.set({ ...creds.get(), mode });
-    const data = text ? (typeof text === "string" ? JSON.parse(text) : text) : {};
-    if (data.error) throw new Error(typeof data.error === "string" ? data.error : JSON.stringify(data.error));
-    return data;
+    if (!unauthorized) break;
   }
   // 送信したヘッダーが途中で落ちていないかを、エコーサービスで確認 (トークン本体は送らない)
   let echo = "";
@@ -64,12 +103,15 @@ async function call(service, method, body = {}) {
 
 /** トークンの有効性を Kaggle に問い合わせる (認証ヘッダー不要の公式エンドポイント) */
 async function introspect(token) {
-  const r = await fetch(`${API}/security.OAuthService/IntrospectToken`, {
-    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ token }),
-  });
-  const text = await r.text();
-  try { return { status: r.status, ...(typeof text === "string" ? JSON.parse(text) : text) }; }
-  catch { return { status: r.status, raw: String(text).slice(0, 120) }; }
+  let last = {};
+  for (const url of [`${WWW}/oauth2/introspect`, `${API}/security.OAuthService/IntrospectToken`]) {
+    try {
+      const r = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ token }) });
+      last = { status: r.status, ...parseJson(await r.text()) };
+      if ("active" in last) return last;
+    } catch (e) { last = { error: e.message }; }
+  }
+  return last;
 }
 
 /** 入力されたユーザー名/トークンを保存し、トークンから正しいユーザー名を確認する */
@@ -93,10 +135,18 @@ const K = "kernels.KernelsApiService";
 const D = "datasets.DatasetApiService";
 const secs = (d) => parseFloat(String(d || "0").replace("s", "")) || 0;
 
+/** 接続テスト: 自分のノートブック一覧 (公式 CLI の `kaggle kernels list -m` と同じ API) を取得 */
+export async function ping() {
+  await call(K, "ListKernels", { user: creds.get().user, pageSize: 1, page: 1 });
+}
+
+/** GPU 残り時間 (API トークンでは取得できない場合があるため失敗時は null) */
 export async function quota() {
-  const r = await call(K, "GetAcceleratorQuotaStatistics");
-  const q = r.gpuQuota || {};
-  return { used: secs(q.timeUsed) / 3600, total: secs(q.totalTimeAllowed) / 3600 };
+  try {
+    const r = await call(K, "GetAcceleratorQuotaStatistics");
+    const q = r.gpuQuota || {};
+    return { used: secs(q.timeUsed) / 3600, total: secs(q.totalTimeAllowed) / 3600 };
+  } catch { return null; }
 }
 
 export function script(job, files = {}) {
@@ -143,7 +193,7 @@ export async function pushJob(kind, job, { files = {}, kernels = [], datasets = 
 export async function status(slug) {
   const { user } = creds.get();
   const r = await call(K, "GetKernelSessionStatus", { userName: user, kernelSlug: slug });
-  return { status: r.status || "QUEUED", failure: r.failureMessage || "" };
+  return { status: String(r.status || "QUEUED").toUpperCase(), failure: r.failureMessage || "" };
 }
 
 export async function outputs(slug) {
@@ -178,8 +228,9 @@ export async function uploadDataset(fileUri, size, onStep) {
   onStep?.("Kaggle 側で処理中…");
   for (let i = 0; i < 90; i++) {
     const s = await call(D, "GetDatasetStatus", { ownerSlug: user, datasetSlug: slug });
-    if (s.status === "READY") return slug;
-    if (s.status === "FAILED") throw new Error("データセットの作成に失敗しました");
+    const st = String(s.status || "").toUpperCase();
+    if (st === "READY") return slug;
+    if (st === "FAILED") throw new Error("データセットの作成に失敗しました");
     await new Promise((res) => setTimeout(res, 5000));
   }
   throw new Error("データセットの準備がタイムアウトしました");

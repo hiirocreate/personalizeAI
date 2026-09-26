@@ -57,8 +57,9 @@ $("k-save").onclick = async () => {
   status("k-status", "接続テスト中…");
   try {
     $("k-user").value = await kaggle.login($("k-user").value, $("k-key").value);
+    await kaggle.ping();
     const q = await kaggle.quota();
-    status("k-status", `✅ 接続OK — 今週の GPU 残り ${(q.total - q.used).toFixed(1)} / ${q.total.toFixed(0)} 時間`);
+    status("k-status", `✅ 接続OK (${$("k-user").value})` + (q ? ` — 今週の GPU 残り ${(q.total - q.used).toFixed(1)} / ${q.total.toFixed(0)} 時間` : ""));
   } catch (e) { status("k-status", "❌ " + e.message, true); }
 };
 function needCreds(statusId) {
