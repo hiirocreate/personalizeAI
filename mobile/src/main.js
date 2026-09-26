@@ -1,5 +1,5 @@
 import { Capacitor } from "@capacitor/core";
-import { Filesystem } from "@capacitor/filesystem";
+import { Filesystem, Directory, Encoding } from "@capacitor/filesystem";
 import { Share } from "@capacitor/share";
 import * as kaggle from "./kaggle.js";
 
@@ -111,17 +111,35 @@ async function finish(j) {
 
 const ACTIVE = ["UPLOADING", "QUEUED", "RUNNING"];
 
-/** 学習画像の送信用カーネルが全て終わったら、それらを入力に学習ジョブを開始 */
+// Kaggle の CPU 同時実行は最大 5 件なので、送信用カーネルは少しずつ投入する
+const MAX_PARALLEL_UPLOADS = 3;
+const chunkPath = (j, i) => `upload/${j.created}/${i}.json`;
+
+/** 学習画像を送信用カーネルに少しずつ載せ、全て終わったらそれらを入力に学習ジョブを開始 */
 async function advanceUpload(j) {
   const st = await Promise.all(j.chunks.map((c) => kaggle.status(c)));
   if (st.some((x) => x.status === "ERROR" || x.status.startsWith("CANCEL"))) {
     j.status = "ERROR"; j.error = "学習画像の送信に失敗しました: " + (st.find((x) => x.failure)?.failure || "");
     return;
   }
-  if (!st.every((x) => x.status === "COMPLETE")) return;
+  let running = st.filter((x) => x.status !== "COMPLETE").length;
+  j.note = `画像送信 ${st.length - running}/${j.chunkTotal}`;
+  while (running < MAX_PARALLEL_UPLOADS && j.chunks.length < j.chunkTotal) {
+    const i = j.chunks.length;
+    const { data } = await Filesystem.readFile({ directory: Directory.Data, path: chunkPath(j, i), encoding: Encoding.UTF8 });
+    try {
+      j.chunks.push(await kaggle.pushFiles(JSON.parse(data)));
+      running++;
+    } catch (e) {
+      if (/Maximum batch/i.test(e.message)) { j.note += " (Kaggle の同時実行枠の空き待ち)"; break; } // 次回の確認で再送
+      throw e;
+    }
+  }
+  if (j.chunks.length < j.chunkTotal || running > 0) return;
   const user = kaggle.userName();
   j.slug = await kaggle.pushJob("train", { type: "train", params: j.params }, { kernels: j.chunks.map((c) => `${user}/${c}`) });
-  j.status = "QUEUED";
+  j.status = "QUEUED"; j.note = "";
+  Filesystem.rmdir({ directory: Directory.Data, path: `upload/${j.created}`, recursive: true }).catch(() => {});
 }
 
 let polling = false;
@@ -154,7 +172,7 @@ function renderJobs() {
     const min = Math.round((Date.now() - j.created) / 60000);
     const [label, cls] = { UPLOADING: ["画像送信中", ""], QUEUED: ["順番待ち", ""], RUNNING: ["実行中", ""], DONE: ["完了", "ok"], ERROR: ["失敗", "err"] }[j.status] || [j.status, ""];
     const sub = j.status === "ERROR" ? `<small class="err">${esc(j.error)}</small>`
-      : ACTIVE.includes(j.status) ? `<small>${min} 分経過 / 目安 ${ETA[j.kind]} 分</small>`
+      : ACTIVE.includes(j.status) ? `<small>${min} 分経過 / 目安 ${ETA[j.kind]} 分${j.note ? " — " + esc(j.note) : ""}</small>`
       : `<small>${new Date(j.created).toLocaleString()}</small>`;
     return `<div class="job"><div class="t"><b>${KIND[j.kind]}: ${esc(j.title)}</b>${sub}</div><span class="pill ${cls}">${label}</span></div>`;
   }).join("");
@@ -325,15 +343,15 @@ $("lora-go").onclick = async () => {
       if (size + b64.length > 800000 && Object.keys(chunks.at(-1)).length) { chunks.push({}); size = 0; }
       chunks.at(-1)[name] = b64; size += b64.length;
     }
-    const slugs = [];
-    for (const [i, c] of chunks.entries()) {
-      status("lora-status", `画像を送信中… ${i + 1}/${chunks.length}`);
-      slugs.push(await kaggle.pushFiles(c));
-    }
     const base = seg("lora-base");
     const params = { name, trigger: name, base, caption: base === "realvis" ? "trigger" : "tags", resolution: 1024, epochs: 10, dim: 16 };
-    jobs.unshift({ slug: null, kind: "train", title: name, status: "UPLOADING", created: Date.now(), chunks: slugs, params, lora: { name, base } });
+    const job = { slug: null, kind: "train", title: name, status: "UPLOADING", created: Date.now(), chunks: [], chunkTotal: chunks.length, params, lora: { name, base } };
+    for (const [i, c] of chunks.entries()) {  // 送信待ちの画像は端末に保存しておき、順番に送る
+      await Filesystem.writeFile({ directory: Directory.Data, path: chunkPath(job, i), data: JSON.stringify(c), encoding: Encoding.UTF8, recursive: true });
+    }
+    jobs.unshift(job);
     save("jobs", jobs); renderJobs();
+    poll();
     renderLoras();
     status("lora-status", "✅ 学習を依頼しました (目安 60〜90 分)。完成すると画像タブの LoRA 欄に出ます");
   } catch (e) { status("lora-status", "❌ " + e.message, true); }
