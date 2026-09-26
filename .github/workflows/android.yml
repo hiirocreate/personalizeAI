@@ -1,0 +1,37 @@
+name: Build Android APK
+on:
+  push:
+    branches: [main]
+    paths: [mobile/**, .github/workflows/android.yml]
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency: { group: apk, cancel-in-progress: true }
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: mobile
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - uses: actions/setup-java@v4
+        with: { distribution: temurin, java-version: 21 }
+      - run: npm ci
+      - run: npm run build
+      - run: npx cap add android && npx cap sync android
+      # 毎回同じ署名にして、更新時に上書きインストールできるようにする
+      - run: mkdir -p ~/.android && cp debug.keystore ~/.android/debug.keystore
+      - run: cd android && ./gradlew assembleDebug --no-daemon -q
+      - run: cp android/app/build/outputs/apk/debug/app-debug.apk ../personalizeAI.apk
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: app-latest
+          name: personalizeAI アプリ (最新版)
+          body: |
+            スマホでこのページを開き、下の **personalizeAI.apk** をタップしてインストールしてください。
+            (初回のみ「提供元不明のアプリ」の許可が必要です)
+          files: personalizeAI.apk
+          make_latest: true

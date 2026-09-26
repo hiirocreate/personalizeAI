@@ -1,0 +1,6 @@
+{
+  "appId": "io.github.hiirocreate.personalizeai",
+  "appName": "personalizeAI",
+  "webDir": "www",
+  "plugins": { "CapacitorHttp": { "enabled": true } }
+}
