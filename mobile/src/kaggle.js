@@ -75,6 +75,11 @@ async function call(service, method, body = {}) {
       const text = await r.text();
       let data;
       try { data = parseJson(text); } catch { tried.push(`${mode}/${label}: ${r.status} (JSON 以外)`); continue; }
+      const denied = String(text).match(/Permission .(\w[\w.]*). was denied/);
+      if (r.status === 403 && denied) {
+        throw new Error(`Kaggle のトークンに「${denied[1]}」の権限がありません。Kaggle の設定ページ → API でトークンを作り直す際に、`
+          + "ノートブック (kernels) の作成・実行・閲覧・削除の権限を付けてください。");
+      }
       if (r.status === 401 || r.status === 403) { tried.push(`${mode}/${label}: ${r.status} ${String(text).slice(0, 100)}`); unauthorized = true; continue; }
       if (r.status === 404 && label === "www") { tried.push(`${mode}/www: 404`); continue; }
       if (!r.ok) throw new Error(`Kaggle API ${r.status}: ${String(text).slice(0, 300)}`);
@@ -132,7 +137,6 @@ export async function login(userInput, keyInput) {
 }
 
 const K = "kernels.KernelsApiService";
-const D = "datasets.DatasetApiService";
 const secs = (d) => parseFloat(String(d || "0").replace("s", "")) || 0;
 
 /** 接続テスト: 自分のノートブック一覧 (公式 CLI の `kaggle kernels list -m` と同じ API) を取得 */
@@ -164,29 +168,42 @@ job.main(JOB)
 `;
 }
 
-/** ジョブ用カーネルを作成して実行開始。slug を返す。 */
-export async function pushJob(kind, job, { files = {}, kernels = [], datasets = [] } = {}) {
+async function saveKernel(slug, text, { gpu = true, kernels = [] } = {}) {
   const { user } = creds.get();
-  const slug = `pai-${kind}-${Date.now().toString(36)}`;
   const r = await call(K, "SaveKernel", {
     slug: `${user}/${slug}`,
     newTitle: slug,
-    text: script(job, files),
+    text,
     language: "python",
     kernelType: "script",
     isPrivate: true,
-    enableGpu: true,
-    enableInternet: true,
-    machineShape: "NvidiaTeslaT4",
-    datasetDataSources: datasets,
+    enableGpu: gpu,
+    enableInternet: gpu,
+    ...(gpu ? { machineShape: "NvidiaTeslaT4" } : {}),
+    datasetDataSources: [],
     kernelDataSources: kernels,
     competitionDataSources: [],
     modelDataSources: [],
     categoryIds: [],
   });
-  if (r.invalidKernelSources?.length || r.invalidDatasetSources?.length)
-    throw new Error("入力データが見つかりません: " + [...(r.invalidKernelSources || []), ...(r.invalidDatasetSources || [])].join(", "));
+  if (r.invalidKernelSources?.length)
+    throw new Error("入力データが見つかりません: " + r.invalidKernelSources.join(", "));
   return slug;
+}
+
+/** ジョブ用カーネルを作成して実行開始。slug を返す。kernels は入力にする他カーネル ("user/slug") */
+export async function pushJob(kind, job, { files = {}, kernels = [] } = {}) {
+  return saveKernel(`pai-${kind}-${Date.now().toString(36)}`, script(job, files), { kernels });
+}
+
+/**
+ * 画像などを「出力ファイルとして保存するだけ」の CPU カーネルに載せて送る
+ * (データセット権限が不要)。後続ジョブはこのカーネルの出力を入力として読む。
+ */
+export async function pushFiles(files) {
+  const text = `import base64, json\nFILES = ${JSON.stringify(files)}\n`
+    + `for name, b64 in FILES.items():\n    open(f"/kaggle/working/{name}", "wb").write(base64.b64decode(b64))\n`;
+  return saveKernel(`pai-data-${Date.now().toString(36)}${Math.floor(Math.random() * 1e4)}`, text, { gpu: false });
 }
 
 /** "QUEUED" | "RUNNING" | "COMPLETE" | "ERROR" | "CANCEL_*" */
@@ -205,40 +222,6 @@ export async function outputs(slug) {
 export async function deleteKernel(slug) {
   const { user } = creds.get();
   try { await call(K, "DeleteKernel", { userName: user, kernelSlug: slug }); } catch { /* 片付け失敗は無視 */ }
-}
-
-/** 端末内のファイル (Filesystem の URI) を非公開データセットとしてアップロード。slug を返す。 */
-export async function uploadDataset(fileUri, size, onStep) {
-  const { user } = creds.get();
-  onStep?.("アップロード準備中…");
-  const up = await call("blobs.BlobApiService", "StartBlobUpload", {
-    type: "DATASET", name: "images.zip", contentType: "application/zip",
-    contentLength: size, lastModifiedEpochSeconds: Math.floor(Date.now() / 1000),
-  });
-  onStep?.("画像をアップロード中…");
-  await FileTransfer.uploadFile({
-    url: up.createUrl, path: fileUri, method: "PUT", chunkedMode: false,
-    headers: { "Content-Type": "application/zip" },
-  });
-  const slug = `pai-ds-${Date.now().toString(36)}`;
-  const r = await call(D, "CreateDataset", {
-    ownerSlug: user, slug, title: slug, licenseName: "CC0-1.0", isPrivate: true, files: [{ token: up.token }],
-  });
-  if (r.error) throw new Error(r.error);
-  onStep?.("Kaggle 側で処理中…");
-  for (let i = 0; i < 90; i++) {
-    const s = await call(D, "GetDatasetStatus", { ownerSlug: user, datasetSlug: slug });
-    const st = String(s.status || "").toUpperCase();
-    if (st === "READY") return slug;
-    if (st === "FAILED") throw new Error("データセットの作成に失敗しました");
-    await new Promise((res) => setTimeout(res, 5000));
-  }
-  throw new Error("データセットの準備がタイムアウトしました");
-}
-
-export async function deleteDataset(slug) {
-  const { user } = creds.get();
-  try { await call(D, "DeleteDataset", { ownerSlug: user, datasetSlug: slug }); } catch { /* 無視 */ }
 }
 
 /** 出力ファイルを端末のアプリ領域に保存し URI を返す */
