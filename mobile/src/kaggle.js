@@ -13,7 +13,7 @@ export const creds = {
 function parseKey(raw) {
   // kaggle.json の中身をそのまま貼った場合にも対応
   try { const j = JSON.parse(raw); if (j.key) return { key: j.key, user: j.username }; } catch { /* 文字列 */ }
-  return { key: raw.trim() };
+  return { key: raw.replace(/\s+/g, "") }; // コピー時に混ざる改行・空白を除去
 }
 
 function header(mode) {
@@ -26,15 +26,19 @@ async function call(service, method, body = {}) {
   const c = creds.get();
   if (!c.key) throw new Error("⚙️ 設定で Kaggle の API トークンを入力してください");
   const first = c.mode || (/^[0-9a-f]{32}$/i.test(c.key) ? "basic" : "bearer");
+  const tried = [];
   for (const mode of [first, first === "basic" ? "bearer" : "basic"]) {
-    if (mode === "basic" && !c.user) continue;
+    if (mode === "basic" && !c.user) { tried.push("basic: ユーザー名なしのため省略"); continue; }
     const r = await fetch(`${API}/${service}/${method}`, {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: header(mode) },
       body: JSON.stringify(body),
     });
     const text = await r.text();
-    if (r.status === 401) continue; // もう一方の認証方式で再試行
+    if (r.status === 401 || r.status === 403) { // もう一方の認証方式で再試行
+      tried.push(`${mode}: ${r.status} ${String(text).slice(0, 120)}`);
+      continue;
+    }
     if (!r.ok) throw new Error(`Kaggle API ${r.status}: ${String(text).slice(0, 300)}`);
     if (c.mode !== mode) creds.set({ ...creds.get(), mode });
     const data = text ? (typeof text === "string" ? JSON.parse(text) : text) : {};
@@ -42,7 +46,8 @@ async function call(service, method, body = {}) {
     return data;
   }
   throw new Error("認証に失敗しました。Kaggle の設定ページ → API → Create New Token で作ったトークンを貼り直してください"
-    + (c.user ? "" : " (旧形式のキーの場合はユーザー名も必要)"));
+    + (c.user ? "" : " (旧形式のキーの場合はユーザー名も必要)")
+    + `\n[診断] トークン長 ${c.key.length} 文字 / 先頭 ${c.key.slice(0, 5)}… / ユーザー名 ${c.user || "(未入力)"}\n` + tried.join("\n"));
 }
 
 /** 入力されたユーザー名/トークンを保存し、トークンから正しいユーザー名を確認する */
