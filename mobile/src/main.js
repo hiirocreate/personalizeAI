@@ -1,7 +1,6 @@
 import { Capacitor } from "@capacitor/core";
-import { Filesystem, Directory } from "@capacitor/filesystem";
+import { Filesystem } from "@capacitor/filesystem";
 import { Share } from "@capacitor/share";
-import JSZip from "jszip";
 import * as kaggle from "./kaggle.js";
 
 const $ = (id) => document.getElementById(id);
@@ -35,14 +34,18 @@ function showTab(t) {
 $("tabs").addEventListener("click", (e) => { const b = e.target.closest("button"); if (b) showTab(b.dataset.t); });
 
 // ---------------------------------------------------------------- 画像を base64 (縮小 JPEG) に
-async function toJpegB64(blobOrUrl, max = 1024) {
+async function fileB64(file) {
+  return new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(String(r.result).split(",")[1]); r.onerror = rej; r.readAsDataURL(file); });
+}
+
+async function toJpegB64(blobOrUrl, max = 1024, quality = 0.9) {
   const url = typeof blobOrUrl === "string" ? blobOrUrl : URL.createObjectURL(blobOrUrl);
   const img = await new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = url; });
   const k = Math.min(1, max / Math.max(img.naturalWidth, img.naturalHeight));
   const c = document.createElement("canvas");
   c.width = Math.round(img.naturalWidth * k); c.height = Math.round(img.naturalHeight * k);
   c.getContext("2d").drawImage(img, 0, 0, c.width, c.height);
-  return c.toDataURL("image/jpeg", 0.9).split(",")[1];
+  return c.toDataURL("image/jpeg", quality).split(",")[1];
 }
 
 // ---------------------------------------------------------------- 設定
@@ -103,7 +106,22 @@ async function finish(j) {
     j.status = "DONE";
     kaggle.deleteKernel(j.slug); // LoRA 以外のジョブは片付ける
   }
-  if (j.dataset) kaggle.deleteDataset(j.dataset);
+  if (j.status === "DONE") (j.chunks || []).forEach((c) => kaggle.deleteKernel(c));
+}
+
+const ACTIVE = ["UPLOADING", "QUEUED", "RUNNING"];
+
+/** 学習画像の送信用カーネルが全て終わったら、それらを入力に学習ジョブを開始 */
+async function advanceUpload(j) {
+  const st = await Promise.all(j.chunks.map((c) => kaggle.status(c)));
+  if (st.some((x) => x.status === "ERROR" || x.status.startsWith("CANCEL"))) {
+    j.status = "ERROR"; j.error = "学習画像の送信に失敗しました: " + (st.find((x) => x.failure)?.failure || "");
+    return;
+  }
+  if (!st.every((x) => x.status === "COMPLETE")) return;
+  const user = kaggle.userName();
+  j.slug = await kaggle.pushJob("train", { type: "train", params: j.params }, { kernels: j.chunks.map((c) => `${user}/${c}`) });
+  j.status = "QUEUED";
 }
 
 let polling = false;
@@ -111,8 +129,9 @@ async function poll() {
   if (polling) return;
   polling = true;
   try {
-    for (const j of jobs.filter((x) => ["QUEUED", "RUNNING"].includes(x.status))) {
+    for (const j of jobs.filter((x) => ACTIVE.includes(x.status))) {
       try {
+        if (j.status === "UPLOADING") { await advanceUpload(j); continue; }
         const s = await kaggle.status(j.slug);
         if (s.status === "COMPLETE") await finish(j);
         else if (s.status === "ERROR" || s.status.startsWith("CANCEL")) {
@@ -128,14 +147,14 @@ setInterval(poll, 20000);
 document.addEventListener("visibilitychange", () => { if (!document.hidden) poll(); });
 
 function renderJobs() {
-  const active = jobs.filter((j) => ["QUEUED", "RUNNING"].includes(j.status)).length;
+  const active = jobs.filter((j) => ACTIVE.includes(j.status)).length;
   $("jobs-badge").textContent = active ? `⏳ ${active} 件処理中` : "";
   if (!jobs.length) { $("job-list").innerHTML = '<p class="hint">依頼はまだありません</p>'; return; }
   $("job-list").innerHTML = jobs.slice(0, 15).map((j) => {
     const min = Math.round((Date.now() - j.created) / 60000);
-    const [label, cls] = { QUEUED: ["順番待ち", ""], RUNNING: ["実行中", ""], DONE: ["完了", "ok"], ERROR: ["失敗", "err"] }[j.status] || [j.status, ""];
+    const [label, cls] = { UPLOADING: ["画像送信中", ""], QUEUED: ["順番待ち", ""], RUNNING: ["実行中", ""], DONE: ["完了", "ok"], ERROR: ["失敗", "err"] }[j.status] || [j.status, ""];
     const sub = j.status === "ERROR" ? `<small class="err">${esc(j.error)}</small>`
-      : ["QUEUED", "RUNNING"].includes(j.status) ? `<small>${min} 分経過 / 目安 ${ETA[j.kind]} 分</small>`
+      : ACTIVE.includes(j.status) ? `<small>${min} 分経過 / 目安 ${ETA[j.kind]} 分</small>`
       : `<small>${new Date(j.created).toLocaleString()}</small>`;
     return `<div class="job"><div class="t"><b>${KIND[j.kind]}: ${esc(j.title)}</b>${sub}</div><span class="pill ${cls}">${label}</span></div>`;
   }).join("");
@@ -274,7 +293,7 @@ $("td-go").onclick = async () => {
 
 // ---------------------------------------------------------------- LoRA
 function renderLoras() {
-  const training = jobs.filter((j) => j.kind === "train" && ["QUEUED", "RUNNING"].includes(j.status));
+  const training = jobs.filter((j) => j.kind === "train" && ACTIVE.includes(j.status));
   const rows = [
     ...training.map((j) => `<div class="lora"><span>${esc(j.lora.name)}</span><span class="pill">学習中</span></div>`),
     ...loras.map((l) => `<div class="lora"><span>${esc(l.name)} <small class="hint">${l.base === "realvis" ? "実写" : "イラスト"}</small></span><span class="pill ok">使用可</span></div>`),
@@ -295,23 +314,26 @@ $("lora-go").onclick = async () => {
   if (needCreds("lora-status")) return;
   $("lora-go").disabled = true;
   try {
-    status("lora-status", "画像をまとめています…");
-    const zip = new JSZip();
+    // 画像を端末で縮小し、約 0.8MB ずつ「送信用カーネル」に載せる (データセット権限が不要)
+    status("lora-status", "画像を準備中…");
+    const chunks = [{}];
+    let size = 0;
     for (const [i, f] of files.entries()) {
-      try { zip.file(`${i}.jpg`, await toJpegB64(f, 1536), { base64: true }); } // 端末で縮小して転送量を削減
-      catch { zip.file(`${i}_${f.name}`, f); }                                   // HEIC 等はそのまま (サーバー側で変換)
+      let name = `${i}.jpg`, b64;
+      try { b64 = await toJpegB64(f, 1024, 0.85); }
+      catch { b64 = await fileB64(f); name = `${i}_${f.name}`; } // HEIC 等はそのまま (サーバー側で変換)
+      if (size + b64.length > 800000 && Object.keys(chunks.at(-1)).length) { chunks.push({}); size = 0; }
+      chunks.at(-1)[name] = b64; size += b64.length;
     }
-    const b64 = await zip.generateAsync({ type: "base64" });
-    const path = `upload_${Date.now()}.zip`;
-    await Filesystem.writeFile({ directory: Directory.Cache, path, data: b64 });
-    const { uri } = await Filesystem.getUri({ directory: Directory.Cache, path });
-    const size = Math.floor((b64.length * 3) / 4) - (b64.endsWith("==") ? 2 : b64.endsWith("=") ? 1 : 0);
-    const dataset = await kaggle.uploadDataset(uri, size, (m) => status("lora-status", m));
-    Filesystem.deleteFile({ directory: Directory.Cache, path }).catch(() => {});
+    const slugs = [];
+    for (const [i, c] of chunks.entries()) {
+      status("lora-status", `画像を送信中… ${i + 1}/${chunks.length}`);
+      slugs.push(await kaggle.pushFiles(c));
+    }
     const base = seg("lora-base");
     const params = { name, trigger: name, base, caption: base === "realvis" ? "trigger" : "tags", resolution: 1024, epochs: 10, dim: 16 };
-    await submit("train", name, { type: "train", params }, { datasets: [`${kaggle.userName()}/${dataset}`] },
-      { dataset, lora: { name, base } });
+    jobs.unshift({ slug: null, kind: "train", title: name, status: "UPLOADING", created: Date.now(), chunks: slugs, params, lora: { name, base } });
+    save("jobs", jobs); renderJobs();
     renderLoras();
     status("lora-status", "✅ 学習を依頼しました (目安 60〜90 分)。完成すると画像タブの LoRA 欄に出ます");
   } catch (e) { status("lora-status", "❌ " + e.message, true); }
