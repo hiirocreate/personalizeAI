@@ -1,0 +1,29 @@
+name: Deploy GPU backend (Modal)
+on:
+  push:
+    branches: [main]
+    paths: [modal_app/**, .github/workflows/modal.yml]
+  workflow_dispatch:
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      MODAL_TOKEN_ID: ${{ secrets.MODAL_TOKEN_ID }}
+      MODAL_TOKEN_SECRET: ${{ secrets.MODAL_TOKEN_SECRET }}
+      PAI_API_KEY: ${{ secrets.PAI_API_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check secrets
+        id: check
+        run: |
+          if [ -z "$MODAL_TOKEN_ID" ] || [ -z "$MODAL_TOKEN_SECRET" ] || [ -z "$PAI_API_KEY" ]; then
+            echo "MODAL_TOKEN_ID / MODAL_TOKEN_SECRET / PAI_API_KEY が未設定のためスキップ"; echo "skip=1" >> "$GITHUB_OUTPUT"
+          fi
+      - if: steps.check.outputs.skip != '1'
+        uses: actions/setup-python@v5
+        with: { python-version: "3.11" }
+      - if: steps.check.outputs.skip != '1'
+        run: |
+          pip install -q modal
+          modal secret create pai-auth PAI_API_KEY="$PAI_API_KEY" --force
+          modal deploy modal_app/pai_modal.py  # 出力の https://<ワークスペース>--personalizeai-api.modal.run をアプリに入力
