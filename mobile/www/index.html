@@ -74,7 +74,7 @@ textarea{min-height:84px;resize:vertical}
 #viewer .ptext.full{max-height:35vh;overflow:auto;user-select:text}
 #viewer .pbtns{display:flex;gap:6px;margin-top:6px;flex-wrap:wrap}
 #viewer .pbtns button{background:#ffffff1a;color:#fff;border:0;border-radius:8px;padding:5px 10px;font:inherit;font-size:12px}
-#viewer .actions{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;padding:10px 10px calc(12px + env(safe-area-inset-bottom))}
+#viewer .actions{display:grid;grid-template-columns:repeat(5,1fr);gap:6px;padding:10px 10px calc(12px + env(safe-area-inset-bottom))}
 #viewer .actions button{background:#ffffff1a;color:#fff;border:0;border-radius:10px;padding:10px 0;font:inherit;font-size:13px}
 #viewer .actions button:disabled{opacity:.35}
 dialog{border:0;border-radius:16px;background:var(--panel);color:var(--fg);width:min(560px,92vw);padding:18px}
@@ -210,6 +210,7 @@ a{color:var(--accent)}
 
   <!-- 作品 -->
   <section id="t-works">
+    <button class="btn" id="works-export" style="margin:0 0 12px">すべて端末に保存</button>
     <div class="grid" id="works-grid"></div>
   </section>
 
@@ -245,6 +246,7 @@ a{color:var(--accent)}
     </div>
   </div>
   <div class="actions">
+    <button id="v-save">保存</button>
     <button id="v-share">共有</button>
     <button id="v-vid">動画に</button>
     <button id="v-3d">3Dに</button>
