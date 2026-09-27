@@ -22,10 +22,28 @@ jobs:
       - run: npm ci
       - run: npm run build
       - run: npx cap add android && npx cap sync android
-      # 毎回同じ署名にして、更新時に上書きインストールできるようにする
-      - run: mkdir -p ~/.android && cp debug.keystore ~/.android/debug.keystore
+      # 毎回同じ鍵で署名し、更新時に上書きインストールできるようにする (データが消えない)
+      - run: |
+          cat >> android/app/build.gradle <<'GRADLE'
+          android {
+              signingConfigs {
+                  debug {
+                      storeFile file("${rootDir}/../debug.keystore")
+                      storePassword "android"
+                      keyAlias "androiddebugkey"
+                      keyPassword "android"
+                  }
+              }
+              buildTypes { debug { signingConfig signingConfigs.debug } }
+          }
+          GRADLE
       - run: cd android && ./gradlew assembleDebug --no-daemon -q
       - run: cp android/app/build/outputs/apk/debug/app-debug.apk ../personalizeAI.apk
+      - name: Verify signing key
+        run: |
+          got=$(python3 scripts/apkcert.py ../personalizeAI.apk | awk '{print $2}')
+          want=$(keytool -list -v -keystore debug.keystore -storepass android | grep 'SHA256:' | head -1 | awk '{print $2}' | tr -d ':')
+          echo "got=$got want=$want"; test "$got" = "$want"
       - uses: softprops/action-gh-release@v2
         with:
           tag_name: app-latest
