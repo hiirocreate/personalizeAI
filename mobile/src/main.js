@@ -15,7 +15,7 @@ let jobs = load("jobs2", []);      // Modal の非同期ジョブ {id, kind, tit
 let works = load("works", []);     // {uri, name, type, prompt, created}
 let loras = load("loras2", []);    // Modal 上の LoRA {name, base}
 const KIND = { image: "LoRA 画像", train: "LoRA 学習" };
-const ETA = { image: 3, train: 60 };
+const ETA = { image: 3, train: 80 };
 
 function status(id, msg, err) { const s = $(id); s.textContent = msg; s.classList.toggle("err", !!err); }
 function seg(id) { return $(id).querySelector("button.on").dataset.v; }
@@ -223,9 +223,11 @@ $("img-go").onclick = async () => {
     } else {
       if (needModal("img-status")) return;
       const lora = $("img-lora").value;
+      // LoRA はトリガーワード (= LoRA 名) がプロンプトに無いと効きにくいので自動で先頭に付ける
+      const fullPrompt = lora && !prompt.toLowerCase().includes(lora.toLowerCase()) ? `${lora}, ${prompt}` : prompt;
       const base = lora ? loras.find((l) => l.name === lora)?.base : $("img-base").value;
       const { call_id } = await modal.image({
-        prompt, model: base, lora, lora_strength: +$("img-lora-str").value, negative: $("img-neg").value.trim(),
+        prompt: fullPrompt, model: base, lora, lora_strength: +$("img-lora-str").value, negative: $("img-neg").value.trim(),
         width: w, height: h, count: n, seed: -1,
       });
       addJob(call_id, "image", prompt.slice(0, 40));
@@ -306,7 +308,8 @@ $("lora-go").onclick = async () => {
     }
     status("lora-status", "送信中…");
     const base = seg("lora-base");
-    const { call_id } = await modal.train({ name, base, caption: base === "realvis" ? "trigger" : "tags", images });
+    const cls = $("lora-class").value.trim();
+    const { call_id } = await modal.train({ name, base, caption: base === "realvis" ? "trigger" : "tags", cls, images });
     addJob(call_id, "train", name, { lora: { name, base } });
     status("lora-status", "✅ 学習を開始しました (目安 30〜60 分)。完成すると画像タブの LoRA 欄に出ます");
   } catch (e) { status("lora-status", "❌ " + e.message, true); }

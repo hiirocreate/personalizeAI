@@ -9,7 +9,7 @@
 | 🖼 🎯 高品質画像 (FLUX) | Hugging Face Spaces | 1 日 2 分 (トークンありで 5 分) の GPU | 10〜20 秒 |
 | 🎬 動画 (Wan2.2) | Hugging Face Spaces | 同上 | 1〜3 分 |
 | 🧊 3D (TRELLIS / Hunyuan3D) | Hugging Face Spaces | 同上 | 1〜2 分 |
-| 🧠 LoRA 学習 | Modal (自分の GPU バックエンド) | 月 $30 分 (カード登録が必要) | 40〜80 分 (約 $0.5〜1/回) |
+| 🧠 LoRA 学習 | Modal (自分の GPU バックエンド) | 月 $30 分 (カード登録が必要) | 60〜100 分 (約 $0.6〜1/回) |
 | 🖼 🧠 自作 LoRA で画像生成 | Modal | 同上 | 1〜3 分 |
 
 - Hugging Face は公開 Space を公式クライアント経由で呼び出します (Space は API 利用が想定された公開アプリ)。混雑時は別の Space に自動で切り替えます。
