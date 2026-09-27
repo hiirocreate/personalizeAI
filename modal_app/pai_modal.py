@@ -19,6 +19,7 @@ app = modal.App("personalizeai")
 data = modal.Volume.from_name("pai-data", create_if_missing=True)      # LoRA・学習画像
 cache = modal.Volume.from_name("pai-hf-cache", create_if_missing=True)  # モデルのキャッシュ
 VOLS = {"/data": data, "/cache": cache}
+progress = modal.Dict.from_name("pai-progress", create_if_missing=True)  # 学習の進み具合 (call_id → 文字列)
 ENV = {"HF_HOME": "/cache/hf", "HF_HUB_ENABLE_HF_TRANSFER": "1"}
 
 BASES = {  # 学習・生成に使う SDXL チェックポイント
@@ -65,6 +66,8 @@ def train_lora(name: str, base: str, caption: str, resolution: int = 1024, epoch
     import pillow_heif
     pillow_heif.register_heif_opener()
 
+    call_id = modal.current_function_call_id()
+    progress.put(call_id, "画像を準備中")
     data.reload()
     src, img = f"/data/datasets/{name}", f"/tmp/train/{name}"
     os.makedirs(img, exist_ok=True)
@@ -78,6 +81,7 @@ def train_lora(name: str, base: str, caption: str, resolution: int = 1024, epoch
     if n == 0:
         raise RuntimeError("学習画像がありません")
     if caption == "tags":
+        progress.put(call_id, f"{n} 枚にタグ付け中")
         subprocess.run(
             "python finetune/tag_images_by_wd14_tagger.py --onnx --repo_id SmilingWolf/wd-eva02-large-tagger-v3 "
             f"--batch_size 4 --caption_extension .txt --remove_underscore --thresh 0.35 {img}",
@@ -98,6 +102,7 @@ enable_bucket = true
 image_dir = "{img}"
 num_repeats = {max(1, 150 // n)}
 """)
+    progress.put(call_id, "モデルをダウンロード中 (初回のみ数分)")
     ckpt, vae = _download(*BASES[base]), _download(*VAE)
     cache.commit()
     os.makedirs("/data/loras", exist_ok=True)
@@ -109,9 +114,19 @@ num_repeats = {max(1, 150 // n)}
            f"--optimizer_type=AdamW8bit --lr_scheduler=cosine --lr_warmup_steps=50 --max_train_epochs={epochs} "
            "--mixed_precision=fp16 --save_precision=fp16 --cache_latents --cache_text_encoder_outputs "
            "--gradient_checkpointing --sdpa --max_data_loader_n_workers=1 --seed=42")
-    r = subprocess.run(cmd, shell=True, cwd="/sd-scripts", capture_output=True, text=True)
-    if r.returncode or not os.path.exists(f"/tmp/out/{name}.safetensors"):
-        raise RuntimeError("学習に失敗しました:\n" + (r.stdout + r.stderr)[-2500:])
+    proc = subprocess.Popen(cmd, shell=True, cwd="/sd-scripts", stdout=subprocess.PIPE,
+                            stderr=subprocess.STDOUT, text=True)
+    tail, last = [], 0.0
+    for line in proc.stdout:  # tqdm の \r 区切りも 1 行として読める
+        print(line, end="")
+        tail = (tail + [line.rstrip()])[-40:]
+        if time.time() - last > 15:
+            m = re.search(r"steps:\s*(\d+)%.*?(\d+)/(\d+)", line)
+            msg = f"学習 {m.group(2)}/{m.group(3)} ステップ ({m.group(1)}%)" if m else "学習の準備中 (モデル読み込み・前処理)"
+            progress.put(call_id, msg)
+            last = time.time()
+    if proc.wait() or not os.path.exists(f"/tmp/out/{name}.safetensors"):
+        raise RuntimeError("学習に失敗しました:\n" + "\n".join(tail)[-2500:])
     os.replace(f"/tmp/out/{name}.safetensors", f"/data/loras/{name}.safetensors")
     json.dump({"name": name, "base": base, "images": n, "created": time.time()},
               open(f"/data/loras/{name}.json", "w"))
@@ -205,7 +220,7 @@ def api():
         try:
             return {"status": "done", "result": call.get(timeout=0)}
         except (TimeoutError, modal.exception.TimeoutError):
-            return {"status": "running"}
+            return {"status": "running", "progress": progress.get(call_id, None)}
         except Exception as e:  # noqa: BLE001 — 失敗内容をアプリへ返す
             return {"status": "error", "message": f"{type(e).__name__}: {e}"[-2000:]}
 

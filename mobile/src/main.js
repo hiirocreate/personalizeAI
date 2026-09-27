@@ -15,7 +15,7 @@ let jobs = load("jobs2", []);      // Modal の非同期ジョブ {id, kind, tit
 let works = load("works", []);     // {uri, name, type, prompt, created}
 let loras = load("loras2", []);    // Modal 上の LoRA {name, base}
 const KIND = { image: "LoRA 画像", train: "LoRA 学習" };
-const ETA = { image: 3, train: 40 };
+const ETA = { image: 3, train: 60 };
 
 function status(id, msg, err) { const s = $(id); s.textContent = msg; s.classList.toggle("err", !!err); }
 function seg(id) { return $(id).querySelector("button.on").dataset.v; }
@@ -109,7 +109,7 @@ async function poll() {
         if (r.status === "done") await finish(j, r.result);
         else if (r.status === "error") { j.status = "ERROR"; j.error = r.message; }
         else j.status = "RUNNING";
-        j.note = "";
+        j.note = r.progress || "";
       } catch (e) { j.note = e.message; }
     }
     save("jobs2", jobs); renderJobs(); renderLoras();
