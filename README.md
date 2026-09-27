@@ -9,11 +9,11 @@
 | 🖼 🎯 高品質画像 (FLUX) | Hugging Face Spaces | 1 日 2 分 (トークンありで 5 分) の GPU | 10〜20 秒 |
 | 🎬 動画 (Wan2.2) | Hugging Face Spaces | 同上 | 1〜3 分 |
 | 🧊 3D (TRELLIS / Hunyuan3D) | Hugging Face Spaces | 同上 | 1〜2 分 |
-| 🧠 LoRA 学習 | Modal (自分の GPU バックエンド) | 月 $30 分 (カード登録不要) | 40〜80 分 (約 $0.5〜1/回) |
+| 🧠 LoRA 学習 | Modal (自分の GPU バックエンド) | 月 $30 分 (カード登録が必要) | 40〜80 分 (約 $0.5〜1/回) |
 | 🖼 🧠 自作 LoRA で画像生成 | Modal | 同上 | 1〜3 分 |
 
 - Hugging Face は公開 Space を公式クライアント経由で呼び出します (Space は API 利用が想定された公開アプリ)。混雑時は別の Space に自動で切り替えます。
-- Modal はアプリのバックエンド用のサーバーレス GPU サービスで、今回の使い方はそのまま想定された用途です。無料枠を超えると止まるだけで課金はされません。
+- Modal はアプリのバックエンド用のサーバーレス GPU サービスで、今回の使い方はそのまま想定された用途です。GPU の利用にはカード登録が必要です。Modal の設定で使用額の上限を設定しておくと、無料枠を超えた請求を防げます。
 
 ## インストール
 スマホで **[最新版 APK](https://github.com/hiirocreate/personalizeAI/releases/tag/app-latest)** を開き `personalizeAI.apk` をタップ (「提供元不明のアプリ」を許可)。
