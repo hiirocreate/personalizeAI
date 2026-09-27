@@ -50,8 +50,10 @@ api_image = modal.Image.debian_slim(python_version="3.11").pip_install("fastapi[
 
 
 def _download(repo, filename):
+    # sd-scripts はシンボリックリンクを readlink して相対パスで開こうとして失敗するため、
+    # HF キャッシュ (リンク) ではなく local_dir に実ファイルとして保存する
     from huggingface_hub import hf_hub_download
-    return hf_hub_download(repo, filename)
+    return hf_hub_download(repo, filename, local_dir=f"/cache/models/{repo}")
 
 
 # ------------------------------------------------------------------ LoRA 学習
