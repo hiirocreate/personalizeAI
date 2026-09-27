@@ -11,12 +11,12 @@
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
 html,body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.55 system-ui,"Hiragino Sans","Noto Sans JP",sans-serif}
 header{position:sticky;top:0;z-index:5;display:flex;align-items:center;gap:8px;padding:calc(10px + env(safe-area-inset-top)) 16px 10px;background:var(--panel);border-bottom:1px solid var(--line)}
-header h1{font-size:17px;margin:0;flex:1}
+header h1{font-size:17px;margin:0;flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .icon-btn{background:none;border:0;color:var(--fg);font-size:20px;padding:6px;cursor:pointer}
-#jobs-badge{font-size:13px;color:var(--accent);font-weight:600}
+.badge{font:inherit;font-size:13px;color:var(--accent);font-weight:600;background:var(--chip);border:0;border-radius:99px;padding:4px 10px;white-space:nowrap}
 main{padding:14px 16px calc(84px + env(safe-area-inset-bottom));max-width:720px;margin:0 auto}
 section{display:none}section.on{display:block}
-nav#tabs{position:fixed;bottom:0;left:0;right:0;z-index:5;display:grid;grid-template-columns:repeat(5,1fr);background:var(--panel);border-top:1px solid var(--line);padding-bottom:env(safe-area-inset-bottom)}
+nav#tabs{position:fixed;bottom:0;left:0;right:0;z-index:5;display:grid;grid-template-columns:repeat(6,1fr);background:var(--panel);border-top:1px solid var(--line);padding-bottom:env(safe-area-inset-bottom)}
 nav#tabs button{background:none;border:0;color:var(--muted);padding:8px 0 10px;font:inherit;font-size:11px;display:flex;flex-direction:column;align-items:center;gap:2px}
 nav#tabs button span{font-size:21px}
 nav#tabs button.on{color:var(--accent);font-weight:600}
@@ -35,7 +35,7 @@ textarea{min-height:84px;resize:vertical}
 .hint{font-size:13px;color:var(--muted);margin:8px 0 0}
 .status{font-size:13px;margin-top:8px;min-height:1.2em;white-space:pre-wrap;word-break:break-all}
 .status.err{color:var(--err)}
-.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(150px,45%),1fr));gap:8px}
 .grid .item{position:relative;aspect-ratio:1;border-radius:10px;overflow:hidden;background:var(--line)}
 .grid img,.grid video{width:100%;height:100%;object-fit:cover;display:block}
 .grid .tag{position:absolute;left:6px;bottom:6px;background:#000a;color:#fff;font-size:11px;padding:1px 6px;border-radius:6px}
@@ -43,7 +43,12 @@ textarea{min-height:84px;resize:vertical}
 .job{display:flex;gap:10px;align-items:center;padding:10px 0;border-top:1px solid var(--line)}
 .job:first-of-type{border-top:0}
 .job .t{flex:1;min-width:0}
-.job .t b{display:block;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.job{align-items:flex-start}
+.job .t b{display:block;font-size:14px}
+.job .t .ptext{font-size:13px;white-space:pre-wrap;word-break:break-word;margin:2px 0}
+.job details{margin-top:4px;font-size:12px}
+.job details pre{white-space:pre-wrap;word-break:break-all;max-height:40vh;overflow:auto;background:var(--bg);padding:8px;border-radius:8px;margin:6px 0 0}
+.job .mini{font:inherit;font-size:12px;border:1px solid var(--line);background:var(--bg);color:var(--fg);border-radius:8px;padding:3px 8px;margin:4px 6px 0 0}
 .job .t small{color:var(--muted)}
 .job .t small.err{color:var(--err)}
 .pill{font-size:12px;padding:2px 8px;border-radius:99px;background:var(--chip);color:var(--accent);white-space:nowrap}
@@ -53,26 +58,56 @@ textarea{min-height:84px;resize:vertical}
 .pick-preview{max-width:100%;max-height:220px;border-radius:10px;display:block;margin-top:8px}
 .lora{display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-top:1px solid var(--line)}
 .lora:first-of-type{border-top:0}
-#viewer{position:fixed;inset:0;z-index:20;background:#000e;display:none;flex-direction:column}
+#viewer{position:fixed;inset:0;z-index:20;background:#000;display:none;flex-direction:column;color:#fff}
 #viewer.on{display:flex}
-#viewer .body{flex:1;display:flex;align-items:center;justify-content:center;min-height:0;padding:calc(10px + env(safe-area-inset-top)) 10px 0}
-#viewer img,#viewer video{max-width:100%;max-height:100%}
+#viewer .vbar{display:flex;align-items:center;justify-content:space-between;padding:calc(6px + env(safe-area-inset-top)) 12px 6px;font-size:13px;color:#bbb}
+#viewer .vbar button{background:none;border:0;color:#fff;font-size:22px;padding:4px 8px}
+#viewer .body{flex:1;display:flex;align-items:center;justify-content:center;min-height:0;padding:0 8px;touch-action:pan-y}
+#viewer img,#viewer video{max-width:100%;max-height:100%;object-fit:contain;user-select:none;-webkit-user-drag:none}
 #viewer model-viewer{width:100%;height:100%;background:#222}
-#viewer .actions{display:grid;grid-template-columns:repeat(5,1fr);gap:6px;padding:10px 10px calc(12px + env(safe-area-inset-bottom))}
-#viewer .actions button{background:#ffffff1a;color:#fff;border:0;border-radius:10px;padding:10px 0;font:inherit;font-size:12px}
-#viewer .caption{color:#ccc;font-size:12px;padding:6px 14px 0;max-height:4.5em;overflow:auto}
+#viewer .vnav{position:absolute;top:45%;background:#0006;color:#fff;border:0;border-radius:50%;width:44px;height:44px;font-size:28px;line-height:1}
+#viewer .vnav.prev{left:8px}#viewer .vnav.next{right:8px}
+#viewer .vnav:disabled{opacity:0;pointer-events:none}
+@media (hover:none){#viewer .vnav{display:none}}
+#viewer .caption{padding:8px 14px 0}
+#viewer .ptext{color:#ddd;font-size:13px;white-space:pre-wrap;word-break:break-word;max-height:3.1em;overflow:hidden}
+#viewer .ptext.full{max-height:35vh;overflow:auto;user-select:text}
+#viewer .pbtns{display:flex;gap:6px;margin-top:6px;flex-wrap:wrap}
+#viewer .pbtns button{background:#ffffff1a;color:#fff;border:0;border-radius:8px;padding:5px 10px;font:inherit;font-size:12px}
+#viewer .actions{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;padding:10px 10px calc(12px + env(safe-area-inset-bottom))}
+#viewer .actions button{background:#ffffff1a;color:#fff;border:0;border-radius:10px;padding:10px 0;font:inherit;font-size:13px}
+#viewer .actions button:disabled{opacity:.35}
 dialog{border:0;border-radius:16px;background:var(--panel);color:var(--fg);width:min(560px,92vw);padding:18px}
 dialog::backdrop{background:#0008}
 dialog ol{padding-left:20px;margin:6px 0}
 dialog li{margin:4px 0;font-size:14px}
 a{color:var(--accent)}
 .hide{display:none!important}
+/* ---------- 画面サイズ別 */
+@media (max-width:360px){nav#tabs button{font-size:10px}nav#tabs button span{font-size:19px}main{padding-left:10px;padding-right:10px}}
+@media (max-height:500px) and (orientation:landscape){
+  nav#tabs button{padding:4px 0 6px;flex-direction:row;justify-content:center;gap:4px}
+  nav#tabs button span{font-size:17px}
+  main{padding-bottom:calc(52px + env(safe-area-inset-bottom))}
+  #viewer .ptext{max-height:1.6em}
+}
+@media (min-width:900px){
+  nav#tabs{top:0;right:auto;width:84px;grid-template-columns:1fr;grid-auto-rows:min-content;align-content:start;
+    padding-top:calc(64px + env(safe-area-inset-top));border-top:0;border-right:1px solid var(--line)}
+  nav#tabs button{padding:12px 0}
+  header,main{margin-left:84px}
+  main{max-width:1100px;padding:20px 24px 24px}
+  #t-img.on{display:grid;grid-template-columns:minmax(340px,440px) 1fr;gap:20px;align-items:start}
+  #t-img .card{position:sticky;top:76px}
+  #t-vid,#t-3d,#t-lora,#t-log{max-width:680px;margin:0 auto}
+  .grid{grid-template-columns:repeat(auto-fill,minmax(200px,1fr))}
+}
 </style>
 </head>
 <body>
 <header>
   <h1>🎨 personalizeAI</h1>
-  <span id="jobs-badge"></span>
+  <button id="jobs-badge" class="badge hide"></button>
   <button class="icon-btn" id="open-settings" aria-label="設定">⚙️</button>
 </header>
 <main>
@@ -175,11 +210,15 @@ a{color:var(--accent)}
 
   <!-- 作品 -->
   <section id="t-works">
-    <div class="card hide" id="jobs-card">
-      <b>LoRA ジョブ</b>
+    <div class="grid" id="works-grid"></div>
+  </section>
+
+  <!-- ログ -->
+  <section id="t-log">
+    <div class="card" id="jobs-card">
+      <b>LoRA ジョブ (Modal)</b>
       <div id="job-list"><p class="hint">依頼はまだありません</p></div>
     </div>
-    <div class="grid" id="works-grid"></div>
   </section>
 </main>
 
@@ -189,17 +228,27 @@ a{color:var(--accent)}
   <button data-t="t-lora"><span>🧠</span>LoRA</button>
   <button data-t="t-3d"><span>🧊</span>3D</button>
   <button data-t="t-works"><span>📁</span>作品</button>
+  <button data-t="t-log"><span>📋</span>ログ</button>
 </nav>
 
 <div id="viewer">
+  <div class="vbar"><span id="v-count"></span><button id="v-close" aria-label="閉じる">✕</button></div>
   <div class="body" id="viewer-body"></div>
-  <div class="caption" id="viewer-caption"></div>
+  <button class="vnav prev" id="v-prev" aria-label="前へ">‹</button>
+  <button class="vnav next" id="v-next" aria-label="次へ">›</button>
+  <div class="caption">
+    <div class="ptext" id="viewer-caption"></div>
+    <div class="pbtns">
+      <button id="v-more">全文</button>
+      <button id="v-copy">コピー</button>
+      <button id="v-reuse">このプロンプトで作る</button>
+    </div>
+  </div>
   <div class="actions">
     <button id="v-share">共有</button>
     <button id="v-vid">動画に</button>
     <button id="v-3d">3Dに</button>
     <button id="v-del">削除</button>
-    <button id="v-close">閉じる</button>
   </div>
 </div>
 

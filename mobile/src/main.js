@@ -94,7 +94,7 @@ async function finish(j, result) {
   if (j.kind === "train") {
     await refreshLoras();
   } else {
-    for (const [i, b64] of (result.images || []).entries()) await saveB64(b64, `lora_${i}.png`, "image", j.title);
+    for (const [i, b64] of (result.images || []).entries()) await saveB64(b64, `lora_${i}.png`, "image", j.prompt || j.title);
   }
   j.status = "DONE";
 }
@@ -125,17 +125,42 @@ function addJob(id, kind, title, extra = {}) {
 }
 function renderJobs() {
   const active = jobs.filter((j) => ACTIVE.includes(j.status)).length;
-  $("jobs-badge").textContent = active ? `⏳ ${active} 件処理中` : "";
-  $("jobs-card").classList.toggle("hide", !jobs.length);
-  $("job-list").innerHTML = jobs.slice(0, 15).map((j) => {
+  $("jobs-badge").textContent = `⏳ ${active}件処理中`;
+  $("jobs-badge").classList.toggle("hide", !active);
+  if (!jobs.length) { $("job-list").innerHTML = '<p class="hint">依頼はまだありません</p>'; return; }
+  $("job-list").innerHTML = jobs.map((j, i) => {
     const min = Math.round((Date.now() - j.created) / 60000);
     const [label, cls] = { QUEUED: ["順番待ち", ""], RUNNING: ["実行中", ""], DONE: ["完了", "ok"], ERROR: ["失敗", "err"] }[j.status] || [j.status, ""];
-    const sub = j.status === "ERROR" ? `<small class="err">${esc(j.error)}</small>`
-      : ACTIVE.includes(j.status) ? `<small>${min} 分経過 / 目安 ${ETA[j.kind]} 分${j.note ? " — " + esc(j.note) : ""}</small>`
-      : `<small>${new Date(j.created).toLocaleString()}</small>`;
-    return `<div class="job"><div class="t"><b>${KIND[j.kind]}: ${esc(j.title)}</b>${sub}</div><span class="pill ${cls}">${label}</span></div>`;
+    const when = ACTIVE.includes(j.status) ? `${min} 分経過 / 目安 ${ETA[j.kind]} 分${j.note ? " — " + esc(j.note) : ""}`
+      : new Date(j.created).toLocaleString();
+    const err = j.status === "ERROR"
+      ? `<details><summary class="err">エラー内容を表示</summary><pre>${esc(j.error)}</pre>`
+        + `<button class="mini" data-act="copy-err" data-i="${i}">エラーをコピー</button></details>` : "";
+    const tools = j.kind === "image"
+      ? `<div><button class="mini" data-act="copy" data-i="${i}">プロンプトをコピー</button>`
+        + `<button class="mini" data-act="reuse" data-i="${i}">このプロンプトで作る</button></div>` : "";
+    return `<div class="job"><div class="t"><b>${KIND[j.kind]}</b><div class="ptext">${esc(j.prompt || j.title)}</div>`
+      + `<small>${when}</small>${err}${tools}</div><span class="pill ${cls}">${label}</span></div>`;
   }).join("");
 }
+async function copyText(t) {
+  try { await navigator.clipboard.writeText(t); toast("コピーしました"); } catch { toast("コピーできませんでした"); }
+}
+function toast(msg) {
+  const el = Object.assign(document.createElement("div"), { textContent: msg });
+  el.style.cssText = "position:fixed;left:50%;bottom:96px;transform:translateX(-50%);background:#000c;color:#fff;"
+    + "padding:8px 14px;border-radius:99px;font-size:13px;z-index:50";
+  document.body.append(el); setTimeout(() => el.remove(), 1500);
+}
+function reusePrompt(text) { $("img-prompt").value = text; closeViewer(); showTab("t-img"); }
+$("job-list").addEventListener("click", (e) => {
+  const b = e.target.closest("button[data-act]"); if (!b) return;
+  const j = jobs[+b.dataset.i];
+  if (b.dataset.act === "copy-err") copyText(j.error || "");
+  if (b.dataset.act === "copy") copyText(j.prompt || j.title);
+  if (b.dataset.act === "reuse") reusePrompt(j.prompt || j.title);
+});
+$("jobs-badge").onclick = () => showTab("t-log");
 
 // ---------------------------------------------------------------- 作品
 function renderWorks() {
@@ -145,28 +170,58 @@ function renderWorks() {
     return `<div class="item" data-i="${i}">${media}<span class="tag">${{ image: "画像", video: "動画", glb: "3D" }[w.type]}</span></div>`;
   }).join("") || '<p class="hint">まだ作品はありません</p>';
 }
-let current = null;
-function openViewer(w) {
-  current = w;
-  const s = src(w.uri);
+let current = null, curIndex = 0;
+function openViewer(i) {
+  if (i < 0 || i >= works.length) return;
+  curIndex = i; current = works[i];
+  const w = current, s = src(w.uri);
   $("viewer-body").innerHTML = w.type === "video" ? `<video src="${s}" controls autoplay loop playsinline></video>`
     : w.type === "glb" ? `<model-viewer src="${s}" camera-controls auto-rotate shadow-intensity="1"></model-viewer>`
-    : `<img src="${s}" alt="">`;
-  $("viewer-caption").textContent = w.prompt || "";
+    : `<img src="${s}" alt="" draggable="false">`;
+  $("viewer-caption").textContent = w.prompt || "(プロンプトなし)";
+  $("viewer-caption").classList.remove("full");
+  $("v-more").textContent = "全文";
+  $("v-count").textContent = `${i + 1} / ${works.length}`;
+  $("v-prev").disabled = i === 0; $("v-next").disabled = i === works.length - 1;
   $("v-vid").disabled = $("v-3d").disabled = w.type !== "image";
   $("viewer").classList.add("on");
 }
-const closeViewer = () => { $("viewer").classList.remove("on"); $("viewer-body").innerHTML = ""; };
-for (const id of ["works-grid", "img-out"]) {
-  $(id).addEventListener("click", (e) => { const it = e.target.closest(".item"); if (it?.dataset.i) openViewer(works[+it.dataset.i]); });
-}
+function closeViewer() { $("viewer").classList.remove("on"); $("viewer-body").innerHTML = ""; }
+$("works-grid").addEventListener("click", (e) => { const it = e.target.closest(".item"); if (it?.dataset.i) openViewer(+it.dataset.i); });
 $("v-close").onclick = closeViewer;
+$("v-prev").onclick = () => openViewer(curIndex - 1);
+$("v-next").onclick = () => openViewer(curIndex + 1);
+document.addEventListener("keydown", (e) => {
+  if (!$("viewer").classList.contains("on")) return;
+  if (e.key === "ArrowLeft") openViewer(curIndex - 1);
+  if (e.key === "ArrowRight") openViewer(curIndex + 1);
+  if (e.key === "Escape") closeViewer();
+});
+// 左右スワイプで前後の作品へ (3D は回転操作と競合するので対象外)
+let touch = null;
+$("viewer-body").addEventListener("touchstart", (e) => {
+  touch = current?.type === "glb" ? null : { x: e.touches[0].clientX, y: e.touches[0].clientY };
+}, { passive: true });
+$("viewer-body").addEventListener("touchend", (e) => {
+  if (!touch) return;
+  const dx = e.changedTouches[0].clientX - touch.x, dy = e.changedTouches[0].clientY - touch.y;
+  touch = null;
+  if (Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy) * 1.5) openViewer(curIndex + (dx < 0 ? 1 : -1));
+});
+$("v-more").onclick = () => {
+  const full = $("viewer-caption").classList.toggle("full");
+  $("v-more").textContent = full ? "たたむ" : "全文";
+};
+$("viewer-caption").onclick = () => { if (!$("viewer-caption").classList.contains("full")) $("v-more").click(); };
+$("v-copy").onclick = () => copyText(current?.prompt || "");
+$("v-reuse").onclick = () => reusePrompt(current?.prompt || "");
 $("v-share").onclick = async () => { try { await Share.share({ files: [current.uri] }); } catch { /* キャンセル */ } };
 $("v-del").onclick = async () => {
   if (!confirm("削除しますか？")) return;
   works = works.filter((w) => w.uri !== current.uri); save("works", works);
   Filesystem.deleteFile({ path: current.uri }).catch(() => {});
-  closeViewer(); renderWorks();
+  renderWorks();
+  if (works.length) openViewer(Math.min(curIndex, works.length - 1)); else closeViewer();
 };
 const picked = { vid: null, td: null }; // Blob
 async function setPicked(kind, blobOrUrl) {
@@ -230,7 +285,7 @@ $("img-go").onclick = async () => {
         prompt: fullPrompt, model: base, lora, lora_strength: +$("img-lora-str").value, negative: $("img-neg").value.trim(),
         width: w, height: h, count: n, seed: -1,
       });
-      addJob(call_id, "image", prompt.slice(0, 40));
+      addJob(call_id, "image", fullPrompt.slice(0, 40), { prompt: fullPrompt });
       status("img-status", "✅ 依頼しました。1〜3 分で「作品」に届きます");
       setTimeout(poll, 30000);
     }
@@ -249,7 +304,7 @@ $("vid-go").onclick = async () => {
     status("vid-status", "保存中…");
     await saveUrl(url, "video.mp4", "video", prompt);
     status("vid-status", "✅ 完成。「作品」に保存しました");
-    openViewer(works[0]);
+    openViewer(0);
   } catch (e) { status("vid-status", "❌ " + e.message, true); }
   finally { $("vid-go").disabled = false; }
 };
@@ -263,7 +318,7 @@ $("td-go").onclick = async () => {
     status("td-status", "保存中…");
     await saveUrl(url, "model.glb", "glb", "画像から3D");
     status("td-status", "✅ 完成。「作品」に保存しました");
-    openViewer(works[0]);
+    openViewer(0);
   } catch (e) { status("td-status", "❌ " + e.message, true); }
   finally { $("td-go").disabled = false; }
 };
