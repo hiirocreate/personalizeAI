@@ -127,7 +127,8 @@ num_repeats = {max(1, 150 // n)}
             last = time.time()
     if proc.wait() or not os.path.exists(f"/tmp/out/{name}.safetensors"):
         raise RuntimeError("学習に失敗しました:\n" + "\n".join(tail)[-2500:])
-    os.replace(f"/tmp/out/{name}.safetensors", f"/data/loras/{name}.safetensors")
+    import shutil
+    shutil.copyfile(f"/tmp/out/{name}.safetensors", f"/data/loras/{name}.safetensors")  # /tmp → Volume は別デバイス
     json.dump({"name": name, "base": base, "images": n, "created": time.time()},
               open(f"/data/loras/{name}.json", "w"))
     data.commit()
