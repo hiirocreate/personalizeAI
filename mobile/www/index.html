@@ -99,7 +99,7 @@ a{color:var(--accent)}
       <div id="img-lora-opts" class="hide">
         <div class="row">
           <div><label>LoRA</label><select id="img-lora"></select></div>
-          <div><label>LoRA 強度</label><input id="img-lora-str" type="number" value="0.8" step="0.05" min="0" max="1.5"></div>
+          <div><label>LoRA 強度</label><input id="img-lora-str" type="number" value="1.0" step="0.05" min="0" max="1.5"></div>
         </div>
         <div id="img-base-row"><label>ベースモデル</label>
           <select id="img-base"><option value="animagine">Animagine XL 4.0 (イラスト)</option><option value="realvis">RealVisXL 5.0 (実写)</option></select></div>
@@ -145,6 +145,8 @@ a{color:var(--accent)}
       <b>新しく学習する</b>
       <label>名前 (英数字。プロンプトで呼び出す言葉にもなります)</label>
       <input id="lora-name" placeholder="mychara" autocapitalize="off">
+      <label>何の画像か (英語・任意。似せたい対象を表す一般名詞)</label>
+      <input id="lora-class" placeholder="例: woman / man / girl / cat" autocapitalize="off">
       <label>種類</label>
       <div class="seg" id="lora-base">
         <button data-v="animagine" class="on">イラスト・キャラ</button>
@@ -154,7 +156,7 @@ a{color:var(--accent)}
       <input type="file" id="lora-files" accept="image/*,.heic,.heif" multiple>
       <div class="thumbs" id="lora-thumbs"></div>
       <button class="btn" id="lora-go">学習を開始</button>
-      <p class="hint">Modal の無料枠 (月 $30) で 40〜80 分 (1 回 約 $0.5〜1)。完成すると画像タブ「🧠 LoRA」で選べます。実在人物は本人の同意がある場合のみ。</p>
+      <p class="hint">Modal の無料枠 (月 $30) で 60〜100 分 (1 回 約 $0.6〜1)。完成すると画像タブ「🧠 LoRA」で選べます。実在人物は本人の同意がある場合のみ。</p>
       <div class="status" id="lora-status"></div>
     </div>
   </section>

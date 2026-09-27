@@ -28,6 +28,8 @@ BASES = {  # 学習・生成に使う SDXL チェックポイント
 }
 VAE = ("madebyollin/sdxl-vae-fp16-fix", "sdxl_vae.safetensors")  # fp16 で NaN にならない VAE
 NEG = "lowres, bad anatomy, bad hands, text, error, worst quality, low quality, blurry, watermark"
+NEG_PHOTO = ("cartoon, anime, illustration, painting, 3d render, deformed face, bad anatomy, bad hands, "
+             "lowres, blurry, worst quality, low quality, watermark, text")
 
 gen_image = (
     modal.Image.debian_slim(python_version="3.11")
@@ -59,7 +61,8 @@ def _download(repo, filename):
 
 # ------------------------------------------------------------------ LoRA 学習
 @app.function(image=train_image, gpu="T4", memory=32768, timeout=3 * 3600, volumes=VOLS)
-def train_lora(name: str, base: str, caption: str, resolution: int = 1024, epochs: int = 10, dim: int = 16):
+def train_lora(name: str, base: str, caption: str, cls: str = "", resolution: int = 1024, epochs: int = 10,
+               dim: int = 32):
     import glob
     import subprocess
     from PIL import Image
@@ -89,7 +92,7 @@ def train_lora(name: str, base: str, caption: str, resolution: int = 1024, epoch
     for p in glob.glob(f"{img}/*.png"):
         txt = p[:-4] + ".txt"
         tags = open(txt).read().strip() if os.path.exists(txt) and caption == "tags" else ""
-        open(txt, "w").write(", ".join(filter(None, [name, tags])))
+        open(txt, "w").write(", ".join(filter(None, [name, cls, tags])))  # トリガー + 種類 (例: woman) + タグ
 
     open("/tmp/dataset.toml", "w").write(f"""
 [general]
@@ -100,7 +103,7 @@ batch_size = 1
 enable_bucket = true
 [[datasets.subsets]]
 image_dir = "{img}"
-num_repeats = {max(1, 150 // n)}
+num_repeats = {max(1, 240 // n)}
 """)
     progress.put(call_id, "モデルをダウンロード中 (初回のみ数分)")
     ckpt, vae = _download(*BASES[base]), _download(*VAE)
@@ -153,7 +156,7 @@ def generate(p: dict):
     pipe.to("cuda")
     seed = int(p.get("seed", -1))
     seed = seed if seed >= 0 else int.from_bytes(os.urandom(4), "little") & 0x7FFFFFFF
-    images = pipe(prompt=p["prompt"], negative_prompt=p.get("negative") or NEG,
+    images = pipe(prompt=p["prompt"], negative_prompt=p.get("negative") or (NEG_PHOTO if base == "realvis" else NEG),
                   width=int(p.get("width", 832)), height=int(p.get("height", 1216)),
                   num_inference_steps=int(p.get("steps", 28)), guidance_scale=float(p.get("cfg", 5.0)),
                   num_images_per_prompt=int(p.get("count", 1)),
@@ -207,7 +210,8 @@ def api():
             ext = os.path.splitext(im.get("name", ""))[1].lower() or ".jpg"
             open(f"{d}/{i}{ext}", "wb").write(base64.b64decode(im["b64"]))
         data.commit()
-        call = train_lora.spawn(name, body["base"], body.get("caption", "tags"))
+        cls = re.sub(r"[^\w ,-]", "", body.get("cls", ""))[:40]
+        call = train_lora.spawn(name, body["base"], body.get("caption", "tags"), cls)
         return {"call_id": call.object_id}
 
     @web.post("/api/image", dependencies=[Depends(auth)])
