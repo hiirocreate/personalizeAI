@@ -37,6 +37,11 @@ jobs:
               buildTypes { debug { signingConfig signingConfigs.debug } }
           }
           GRADLE
+      # 作品を端末の Documents に保存するための権限 (Android 9 以下) と Android 10 の旧ストレージ方式
+      - run: |
+          m=android/app/src/main/AndroidManifest.xml
+          sed -i 's#<application#<uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="29" />\n    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />\n    <application android:requestLegacyExternalStorage="true"#' $m
+          grep -q requestLegacyExternalStorage $m
       - run: cd android && ./gradlew assembleDebug --no-daemon -q
       - run: cp android/app/build/outputs/apk/debug/app-debug.apk ../personalizeAI.apk
       - name: Verify signing key

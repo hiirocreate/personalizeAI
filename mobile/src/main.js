@@ -215,7 +215,33 @@ $("v-more").onclick = () => {
 $("viewer-caption").onclick = () => { if (!$("viewer-caption").classList.contains("full")) $("v-more").click(); };
 $("v-copy").onclick = () => copyText(current?.prompt || "");
 $("v-reuse").onclick = () => reusePrompt(current?.prompt || "");
-$("v-share").onclick = async () => { try { await Share.share({ files: [current.uri] }); } catch { /* キャンセル */ } };
+// FileProvider は cache と外部ストレージのみ公開しているため、共有前に cache へコピーする
+const fname = (w) => w.uri.split("/").pop();
+$("v-share").onclick = async () => {
+  try {
+    const { uri } = await Filesystem.copy({ from: current.uri, to: `share/${fname(current)}`, toDirectory: Directory.Cache });
+    await Share.share({ files: [uri] });
+  } catch (e) { if (!/cancel/i.test(e?.message || "")) toast("共有できませんでした: " + (e?.message || e)); }
+};
+// 端末の Documents/personalizeAI に保存 (ファイルアプリ・ギャラリーから見られる)
+async function exportWork(w) {
+  await Filesystem.copy({ from: w.uri, to: `personalizeAI/${fname(w)}`, toDirectory: Directory.Documents });
+}
+async function ensureStoragePerm() {
+  try { const p = await Filesystem.requestPermissions(); return p.publicStorage !== "denied"; } catch { return true; }
+}
+$("v-save").onclick = async () => {
+  if (!(await ensureStoragePerm())) return toast("ストレージの許可がありません");
+  try { await exportWork(current); toast("保存しました: Documents/personalizeAI"); }
+  catch (e) { toast("保存できませんでした: " + (e?.message || e)); }
+};
+$("works-export").onclick = async () => {
+  if (!works.length) return toast("作品がありません");
+  if (!(await ensureStoragePerm())) return toast("ストレージの許可がありません");
+  let ok = 0;
+  for (const w of works) { try { await exportWork(w); ok++; } catch { /* 個別失敗は件数で通知 */ } }
+  toast(`${ok} / ${works.length} 件を Documents/personalizeAI に保存しました`);
+};
 $("v-del").onclick = async () => {
   if (!confirm("削除しますか？")) return;
   works = works.filter((w) => w.uri !== current.uri); save("works", works);
