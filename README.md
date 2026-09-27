@@ -1,50 +1,44 @@
 # personalizeAI
 
-完全無料で使える、個人用の画像・動画・LoRA 学習・3D 生成 **Android アプリ**。
-操作はすべてアプリ画面の中で完結します (Colab や GitHub の画面は使いません)。
+無料で使える、個人用の画像・動画・3D・LoRA 学習 **Android アプリ**。操作はアプリ画面の中で完結します。
+用途ごとに、無料で・規約の範囲内で使えるサービスを使い分けています。
 
-## インストール (1 回だけ)
-1. スマホで **[最新版 APK のページ](https://github.com/hiirocreate/personalizeAI/releases/tag/app-latest)** を開き、`personalizeAI.apk` をタップ
-2. 「提供元不明のアプリ」の許可を求められたら許可してインストール
+| 機能 | 使うサービス | 無料枠 | 時間 |
+|---|---|---|---|
+| 🖼 ⚡ すぐ生成 | Pollinations | 登録不要 | 数秒 |
+| 🖼 🎯 高品質画像 (FLUX) | Hugging Face Spaces | 1 日 2 分 (トークンありで 5 分) の GPU | 10〜20 秒 |
+| 🎬 動画 (Wan2.2) | Hugging Face Spaces | 同上 | 1〜3 分 |
+| 🧊 3D (TRELLIS / Hunyuan3D) | Hugging Face Spaces | 同上 | 1〜2 分 |
+| 🧠 LoRA 学習 | Modal (自分の GPU バックエンド) | 月 $30 分 (カード登録不要) | 30〜60 分 (約 $0.5/回) |
+| 🖼 🧠 自作 LoRA で画像生成 | Modal | 同上 | 1〜3 分 |
 
-以後の更新は同じページから APK を入れ直すだけ (データは引き継がれます)。
+- Hugging Face は公開 Space を公式クライアント経由で呼び出します (Space は API 利用が想定された公開アプリ)。混雑時は別の Space に自動で切り替えます。
+- Modal はアプリのバックエンド用のサーバーレス GPU サービスで、今回の使い方はそのまま想定された用途です。無料枠を超えると止まるだけで課金はされません。
 
-## できること
-| タブ | 内容 | 所要時間 |
-|---|---|---|
-| 🖼 画像 ⚡すぐ生成 | GPU 不要・登録不要 (Pollinations) | 数秒 |
-| 🖼 画像 🎯高品質・LoRA | Animagine XL / RealVisXL / Flux GGUF。自作 LoRA 使用可 | 5〜10 分 |
-| 🎬 動画 | Wan2.2 5B GGUF。テキスト→動画 / 画像→動画 | 15〜30 分 |
-| 🧠 LoRA | スマホの写真を選んで学習 → 完成すると画像タブで選べる | 60〜90 分 |
-| 🧊 3D | 画像 → GLB (TripoSR)。アプリ内で回転表示 | 10〜20 分 |
-| 📁 作品 | 結果の一覧・共有・「動画に」「3Dに」へワンタップ | — |
+## インストール
+スマホで **[最新版 APK](https://github.com/hiirocreate/personalizeAI/releases/tag/app-latest)** を開き `personalizeAI.apk` をタップ (「提供元不明のアプリ」を許可)。
 
-GPU を使う機能は **依頼 → 完了すると「作品」に届く** 方式です。依頼後はアプリを閉じても処理は続きます。
+## 設定 (アプリの ⚙️)
+- **Hugging Face トークン** (任意): [トークン作成](https://huggingface.co/settings/tokens) で Read トークンを作って貼る
+- **Modal** (LoRA 機能を使う場合): 下の「Modal の準備」を 1 回行い、ワークスペース名と API キーを入れる
 
-## GPU 機能の準備 (最初に 1 回)
-GPU 機能は [Kaggle](https://www.kaggle.com) の無料 GPU (週 30 時間) を **Kaggle 公式 API** で使います。
-アプリの ⚙️ に手順とリンクがあります。
-1. Kaggle に無料登録
-2. Kaggle の設定ページで電話番号認証 (GPU とインターネット接続に必要)
-3. 同じページの API → **Create New Token** で出たトークンと、ユーザー名をアプリの ⚙️ に入力
-
-## なぜこの方式か
-- Google Colab の無料枠は「ノートブックを使わず Web UI から生成する使い方」を禁止しており、実行中に強制終了されます。Kaggle も Web UI 接続を禁止しています。
-- そのため、GPU をリアルタイムに遠隔操作する方式ではなく、**Kaggle 公式 API でバッチ処理 (ジョブ) を投入し、結果を受け取る** 方式にしています。
-- 各ジョブは使用者本人の Kaggle アカウントで非公開ノートブックとして実行され、終了後に自動で片付けます (LoRA 学習の結果は LoRA の保管場所として残します)。
-
-## 軽量化
-- Flux / T5 / Wan / UMT5 は **GGUF** (Q4〜Q5) で T4 GPU に収める
-- LoRA 学習は UNet のみ・テキストエンコーダ出力キャッシュ・fp16 VAE・8bit AdamW・gradient checkpointing。メモリ不足時は解像度を下げて自動リトライ
+## Modal の準備 (最初に 1 回だけ)
+1. [modal.com](https://modal.com) に無料登録 (GitHub アカウントでログイン可)
+2. Modal の Settings → **API Tokens** → New Token で表示される `token id` と `token secret` を控える
+3. このリポジトリの Settings → Secrets and variables → Actions → **New repository secret** で 3 つ登録
+   - `MODAL_TOKEN_ID` : 2 の token id
+   - `MODAL_TOKEN_SECRET` : 2 の token secret
+   - `PAI_API_KEY` : 自分で決めた長めの合言葉 (アプリとバックエンドの間の鍵)
+4. Actions → **Deploy GPU backend (Modal)** → Run workflow
+5. アプリの ⚙️ に Modal のワークスペース名 (Modal の画面左上 / URL の `modal.com/apps/〇〇` の 〇〇) と `PAI_API_KEY` を入れて「保存して接続テスト」
 
 ## 注意
-- モデルのライセンスに従うこと (Flux.1 schnell / Wan2.2: Apache-2.0、Animagine XL 4.0: Fair AI Public License、RealVisXL: 配布元の規約)
+- Hugging Face の無料枠は 1 日数分なので、動画・3D は 1 日数回が目安です。枠を使い切ると翌日まで使えません
+- モデルのライセンスに従うこと (FLUX.1 schnell / Wan2.2: Apache-2.0、Animagine XL 4.0: Fair AI Public License、RealVisXL: 配布元の規約、TRELLIS / Hunyuan3D: 各ライセンス)
 - 実在人物の画像・LoRA は本人の同意があるもののみ
-- Kaggle の API トークンは端末内にのみ保存されます
+- トークン・API キーは端末内にのみ保存されます
 
 ## 構成
-- `mobile/` — Android アプリ (Capacitor)。`main` への push で GitHub Actions が APK をビルドし、上記ページに公開
-  - `src/main.js` 画面とジョブ管理 / `src/kaggle.js` Kaggle 公式 API クライアント
-- `pai/job.py` — Kaggle 上で 1 件のジョブを実行する入口
-- `pai/core.py` (セットアップ・モデル取得・ComfyUI) / `pai/comfy.py` (ComfyUI API) / `pai/train.py` (LoRA 学習) / `pai/threed.py` (3D)
-- `workflows/*.json` — ComfyUI ワークフロー
+- `mobile/` — Android アプリ (Capacitor)。`main` への push で GitHub Actions が APK をビルドして上記ページに公開
+  - `src/services.js` 各サービスの呼び出し / `src/main.js` 画面・ジョブ管理
+- `modal_app/pai_modal.py` — Modal の GPU バックエンド (LoRA 学習: kohya-ss sd-scripts / 画像: diffusers SDXL + LoRA)。`modal_app/` 変更時に自動デプロイ
