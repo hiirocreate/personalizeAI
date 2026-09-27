@@ -39,8 +39,9 @@ train_image = (
     .apt_install("git", "libgl1", "libglib2.0-0")
     .pip_install("torch==2.4.1", "torchvision==0.19.1")
     .run_commands(
-        "git clone --depth 1 https://github.com/kohya-ss/sd-scripts /sd-scripts",
-        "cd /sd-scripts && pip install -r requirements.txt bitsandbytes onnx onnxruntime pillow-heif "
+        # 最新版は transformers 5 系 (新しい torch 必須) のため、torch 2.4 で動く安定版に固定
+        "git clone --depth 1 --branch v0.9.1 https://github.com/kohya-ss/sd-scripts /sd-scripts",
+        "cd /sd-scripts && pip install -r requirements.txt 'numpy<2' onnx onnxruntime pillow-heif "
         "huggingface_hub[hf_transfer]",
     )
     .env(ENV)
