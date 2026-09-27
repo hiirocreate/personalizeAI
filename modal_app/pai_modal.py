@@ -35,7 +35,7 @@ gen_image = (
     modal.Image.debian_slim(python_version="3.11")
     .pip_install("torch==2.5.1", "diffusers==0.32.2", "transformers==4.47.1", "accelerate==1.2.1",
                  "safetensors", "peft==0.14.0", "huggingface_hub[hf_transfer]==0.27.1", "pillow")
-    .env(ENV)
+    .env({**ENV, "PYTORCH_CUDA_ALLOC_CONF": "expandable_segments:True"})
 )
 train_image = (
     modal.Image.debian_slim(python_version="3.10")
@@ -156,11 +156,16 @@ def generate(p: dict):
     pipe.to("cuda")
     seed = int(p.get("seed", -1))
     seed = seed if seed >= 0 else int.from_bytes(os.urandom(4), "little") & 0x7FFFFFFF
-    images = pipe(prompt=p["prompt"], negative_prompt=p.get("negative") or (NEG_PHOTO if base == "realvis" else NEG),
-                  width=int(p.get("width", 832)), height=int(p.get("height", 1216)),
-                  num_inference_steps=int(p.get("steps", 28)), guidance_scale=float(p.get("cfg", 5.0)),
-                  num_images_per_prompt=int(p.get("count", 1)),
-                  generator=torch.Generator("cuda").manual_seed(seed)).images
+    # T4 (16GB) で複数枚を一括処理すると VAE デコードでメモリ不足になるため 1 枚ずつ生成
+    pipe.enable_vae_slicing()
+    pipe.enable_vae_tiling()
+    images = []
+    for i in range(int(p.get("count", 1))):
+        images += pipe(prompt=p["prompt"], negative_prompt=p.get("negative") or (NEG_PHOTO if base == "realvis" else NEG),
+                       width=int(p.get("width", 832)), height=int(p.get("height", 1216)),
+                       num_inference_steps=int(p.get("steps", 28)), guidance_scale=float(p.get("cfg", 5.0)),
+                       generator=torch.Generator("cuda").manual_seed(seed + i)).images
+        torch.cuda.empty_cache()
     out = []
     for im in images:
         buf = io.BytesIO()
