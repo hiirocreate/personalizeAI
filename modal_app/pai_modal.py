@@ -54,7 +54,7 @@ def _download(repo, filename):
 
 
 # ------------------------------------------------------------------ LoRA 学習
-@app.function(image=train_image, gpu="L4", timeout=3 * 3600, volumes=VOLS)
+@app.function(image=train_image, gpu="T4", memory=32768, timeout=3 * 3600, volumes=VOLS)
 def train_lora(name: str, base: str, caption: str, resolution: int = 1024, epochs: int = 10, dim: int = 16):
     import glob
     import subprocess
@@ -117,7 +117,7 @@ num_repeats = {max(1, 150 // n)}
 
 
 # ------------------------------------------------------------------ 画像生成 (LoRA 対応)
-@app.function(image=gen_image, gpu="L4", timeout=900, volumes=VOLS, scaledown_window=120)
+@app.function(image=gen_image, gpu="T4", memory=16384, timeout=900, volumes=VOLS, scaledown_window=120)
 def generate(p: dict):
     import torch
     from diffusers import AutoencoderKL, EulerAncestralDiscreteScheduler, StableDiffusionXLPipeline
