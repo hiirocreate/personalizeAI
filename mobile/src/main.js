@@ -217,15 +217,20 @@ $("v-copy").onclick = () => copyText(current?.prompt || "");
 $("v-reuse").onclick = () => reusePrompt(current?.prompt || "");
 // FileProvider は cache と外部ストレージのみ公開しているため、共有前に cache へコピーする
 const fname = (w) => w.uri.split("/").pop();
+// copy は親フォルダを作らないので先に作る (既にある場合のエラーは無視)
+async function copyTo(w, dir, directory) {
+  await Filesystem.mkdir({ path: dir, directory, recursive: true }).catch(() => {});
+  return Filesystem.copy({ from: w.uri, to: `${dir}/${fname(w)}`, toDirectory: directory });
+}
 $("v-share").onclick = async () => {
   try {
-    const { uri } = await Filesystem.copy({ from: current.uri, to: `share/${fname(current)}`, toDirectory: Directory.Cache });
+    const { uri } = await copyTo(current, "share", Directory.Cache);
     await Share.share({ files: [uri] });
   } catch (e) { if (!/cancel/i.test(e?.message || "")) toast("共有できませんでした: " + (e?.message || e)); }
 };
 // 端末の Documents/personalizeAI に保存 (ファイルアプリ・ギャラリーから見られる)
 async function exportWork(w) {
-  await Filesystem.copy({ from: w.uri, to: `personalizeAI/${fname(w)}`, toDirectory: Directory.Documents });
+  await copyTo(w, "personalizeAI", Directory.Documents);
 }
 async function ensureStoragePerm() {
   try { const p = await Filesystem.requestPermissions(); return p.publicStorage !== "denied"; } catch { return true; }
