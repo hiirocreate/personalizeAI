@@ -57,9 +57,9 @@ async function saveUrl(url, name, type, prompt) {
   await FileTransfer.downloadFile({ url, path: uri });
   addWork({ uri, name, type, prompt });
 }
-async function saveB64(b64, name, type, prompt) {
+async function saveB64(b64, name, type, prompt, negative) {
   const { uri } = await Filesystem.writeFile({ directory: Directory.Data, path: `works/${Date.now()}_${name}`, data: b64, recursive: true });
-  addWork({ uri, name, type, prompt });
+  addWork({ uri, name, type, prompt, negative });
 }
 function addWork(w) { works.unshift({ ...w, created: Date.now() }); save("works", works); renderWorks(); }
 
@@ -94,7 +94,7 @@ async function finish(j, result) {
   if (j.kind === "train") {
     await refreshLoras();
   } else {
-    for (const [i, b64] of (result.images || []).entries()) await saveB64(b64, `lora_${i}.png`, "image", j.prompt || j.title);
+    for (const [i, b64] of (result.images || []).entries()) await saveB64(b64, `lora_${i}.png`, "image", j.prompt || j.title, j.negative);
   }
   j.status = "DONE";
 }
@@ -152,13 +152,13 @@ function toast(msg) {
     + "padding:8px 14px;border-radius:99px;font-size:13px;z-index:50";
   document.body.append(el); setTimeout(() => el.remove(), 1500);
 }
-function reusePrompt(text) { $("img-prompt").value = text; closeViewer(); showTab("t-img"); }
+function reusePrompt(text, negative) { $("img-prompt").value = text; $("img-neg").value = negative || ""; closeViewer(); showTab("t-img"); }
 $("job-list").addEventListener("click", (e) => {
   const b = e.target.closest("button[data-act]"); if (!b) return;
   const j = jobs[+b.dataset.i];
   if (b.dataset.act === "copy-err") copyText(j.error || "");
   if (b.dataset.act === "copy") copyText(j.prompt || j.title);
-  if (b.dataset.act === "reuse") reusePrompt(j.prompt || j.title);
+  if (b.dataset.act === "reuse") reusePrompt(j.prompt || j.title, j.negative);
 });
 $("jobs-badge").onclick = () => showTab("t-log");
 
@@ -178,7 +178,7 @@ function openViewer(i) {
   $("viewer-body").innerHTML = w.type === "video" ? `<video src="${s}" controls autoplay loop playsinline></video>`
     : w.type === "glb" ? `<model-viewer src="${s}" camera-controls auto-rotate shadow-intensity="1"></model-viewer>`
     : `<img src="${s}" alt="" draggable="false">`;
-  $("viewer-caption").textContent = w.prompt || "(プロンプトなし)";
+  $("viewer-caption").textContent = (w.prompt || "(プロンプトなし)") + (w.negative ? `\n\nネガティブ: ${w.negative}` : "");
   $("viewer-caption").classList.remove("full");
   $("v-more").textContent = "全文";
   $("v-count").textContent = `${i + 1} / ${works.length}`;
@@ -214,7 +214,7 @@ $("v-more").onclick = () => {
 };
 $("viewer-caption").onclick = () => { if (!$("viewer-caption").classList.contains("full")) $("v-more").click(); };
 $("v-copy").onclick = () => copyText(current?.prompt || "");
-$("v-reuse").onclick = () => reusePrompt(current?.prompt || "");
+$("v-reuse").onclick = () => reusePrompt(current?.prompt || "", current?.negative);
 // FileProvider は cache と外部ストレージのみ公開しているため、共有前に cache へコピーする
 const fname = (w) => w.uri.split("/").pop();
 // copy は親フォルダを作らないので先に作る (既にある場合のエラーは無視)
@@ -316,7 +316,7 @@ $("img-go").onclick = async () => {
         prompt: fullPrompt, model: base, lora, lora_strength: +$("img-lora-str").value, negative: $("img-neg").value.trim(),
         width: w, height: h, count: n, seed: -1,
       });
-      addJob(call_id, "image", fullPrompt.slice(0, 40), { prompt: fullPrompt });
+      addJob(call_id, "image", fullPrompt.slice(0, 40), { prompt: fullPrompt, negative: $("img-neg").value.trim() });
       status("img-status", "✅ 依頼しました。1〜3 分で「作品」に届きます");
       setTimeout(poll, 30000);
     }
