@@ -25,7 +25,8 @@ function friendly(e) {
   const m = String(e?.message || e);
   if (/quota|exceeded/i.test(m)) {
     return "Hugging Face の本日の無料 GPU 枠 (1 日 数分) を使い切りました。"
-      + (settings.get().hfToken ? "明日また使えます。" : "⚙️ で Hugging Face トークンを入れると枠が増えます。");
+      + (settings.get().hfToken ? "時間をおく (目安は翌日) と回復します。" : "⚙️ で Hugging Face トークンを入れると枠が増えます。")
+      + " (動画は 1 本で 1〜2 分ぶん使うため、1 日 2〜3 本が目安)";
   }
   return m;
 }
@@ -41,7 +42,8 @@ async function runSpace(space, endpoint, payload, onStatus) {
     }
     if (ev.type === "data") return ev.data;
   }
-  throw new Error("結果が返りませんでした");
+  // ZeroGPU の枠切れ・拒否は理由なし (error: null) で終わることが多い
+  throw new Error("quota: 結果が返りませんでした");
 }
 
 /** 候補の Space を順に試す (混雑・停止中に備える) */
