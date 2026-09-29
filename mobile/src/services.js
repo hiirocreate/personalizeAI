@@ -104,7 +104,15 @@ function modalBase() {
   return modal.startsWith("http") ? modal.replace(/\/$/, "") : `https://${modal}--personalizeai-api.modal.run`;
 }
 
+// Modal の一時的な 5xx (起動待ち・混雑) は GET なら自動で再試行する。POST は二重依頼を避けるため再試行しない
 async function modalCall(path, body) {
+  for (let i = 0; ; i++) {
+    try { return await modalOnce(path, body); }
+    catch (e) { if (!e.transient || body || i >= 2) throw e; await new Promise((ok) => setTimeout(ok, 3000 * (i + 1))); }
+  }
+}
+
+async function modalOnce(path, body) {
   const { modalKey } = settings.get();
   const r = await fetch(modalBase() + path, {
     method: body ? "POST" : "GET",
@@ -114,6 +122,11 @@ async function modalCall(path, body) {
   const text = await r.text();
   if (r.status === 401) throw new Error("Modal の API キーが違います (⚙️ で確認)");
   if (r.status === 404) throw new Error("Modal のバックエンドが見つかりません。ワークスペース名とデプロイ状況を確認してください");
+  if (r.status >= 500) {
+    const e = new Error(`Modal が一時的に応答しませんでした (${r.status})。少し待ってからもう一度試してください`
+      + (path === "/api/train" ? "。学習は受け付け済みの場合があるので、1〜2 時間後に LoRA 一覧を確認してから再依頼してください" : ""));
+    e.transient = true; throw e;
+  }
   if (!r.ok) throw new Error(`Modal ${r.status}: ${text.slice(0, 300)}`);
   return JSON.parse(text);
 }
